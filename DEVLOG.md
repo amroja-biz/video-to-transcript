@@ -133,6 +133,18 @@ Lambda datacenter IP** — migrated browser cookies + the in-Lambda PO-token
 server doing their job. Error path verified too (bad URL → `status=error` with
 the cause). The chunked >20-min path is deployed but hasn't had a live run yet.
 
+### Chunked path verified (2026-06-07)
+A 42.6-minute YouTube video (2,555s) exercised the long-audio branch live:
+Choice → ChunkAudio → Map with **5 parallel transcribe_chunk iterations**
+(4×600s + 155s) → merge. 8 Lambda invocations total, **4m17s wall time**
+end-to-end. Verified in the merged transcript: timestamps are monotone across
+all four 10-minute boundaries (offsets applied correctly), content runs to
+42:34, and `chunks/<id>/` intermediates were cleaned up from S3. Known minor
+artifact: a word or two can repeat/clip at chunk seams because ffmpeg segments
+with `-c copy` (no overlap) — acceptable for now; overlapping chunks would fix
+it if it ever matters. Same day, X.com and Instagram URLs were also verified
+end-to-end through the short path.
+
 ---
 
 ## 2026-06-07 - Graduated Out of Scratch
