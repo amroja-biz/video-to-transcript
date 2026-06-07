@@ -1,0 +1,664 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  audio-downloader: download audio (MP3) from any yt-dlp-supported site and
+  auto-transcribe it with faster-whisper. Private S3 bucket (cookies/ input,
+  audio/ + transcripts/ output), ECR repo for the worker image, DynamoDB job
+  table, token-protected HTTP API, and a Step Functions pipeline with a hard
+  15-minute deadline that chunks long audio for parallel transcription.
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: amroja-audio
+    Description: Name of the S3 bucket for cookies, audio, and transcripts.
+  ApiAuthToken:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: >
+      Opaque token required in the x-api-token header. NOTE: NoEcho values
+      cannot be recovered from the stack — deploy.sh persists it in .api-token
+      and re-passes it on every update.
+  WorkerImageTag:
+    Type: String
+    Default: latest
+    Description: ECR image tag for the worker Lambda.
+  AudioRetentionDays:
+    Type: Number
+    Default: 30
+    Description: Days to keep downloaded MP3s under audio/ before expiry.
+  CookieVersionsToKeep:
+    Type: Number
+    Default: 5
+    Description: Noncurrent versions of cookies.txt to retain (rollback).
+  ThrottleRateLimit:
+    Type: Number
+    Default: 5
+    Description: API steady-state requests/second (blunts token brute-forcing).
+  ThrottleBurstLimit:
+    Type: Number
+    Default: 10
+    Description: API burst limit.
+  ChunkThresholdSeconds:
+    Type: Number
+    Default: 1200
+    Description: Audio longer than this (seconds) is chunked for parallel transcription.
+  ProvisionCompute:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Set false on the very first deploy of a fresh account so the stack can
+      create the ECR repo before the worker image exists; deploy.sh then pushes
+      the image and re-deploys with true.
+
+Conditions:
+  ComputeEnabled: !Equals [!Ref ProvisionCompute, "true"]
+
+Resources:
+  # ------------------------------------------------------------- storage ----
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireAudio
+            Status: Enabled
+            Prefix: audio/
+            ExpirationInDays: !Ref AudioRetentionDays
+          - Id: ExpireOrphanedChunks
+            Status: Enabled
+            Prefix: chunks/
+            ExpirationInDays: 2
+          - Id: PruneOldCookieVersions
+            Status: Enabled
+            Prefix: cookies/
+            NoncurrentVersionExpiration:
+              NewerNoncurrentVersions: !Ref CookieVersionsToKeep
+              NoncurrentDays: 1
+          # transcripts/ has no expiry — transcripts are the point of the tool.
+
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: audio-downloader
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep only the 5 most recent images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+
+  RunnerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Lets the audio-downloader pipeline read cookies and write outputs.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadCookies
+            Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub "${Bucket.Arn}/cookies/*"
+          - Sid: AudioReadWrite
+            Effect: Allow
+            Action: [s3:PutObject, s3:GetObject]
+            Resource: !Sub "${Bucket.Arn}/audio/*"
+          - Sid: TranscriptsWrite
+            Effect: Allow
+            Action: s3:PutObject
+            Resource: !Sub "${Bucket.Arn}/transcripts/*"
+          - Sid: ChunkScratch
+            Effect: Allow
+            Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
+            Resource: !Sub "${Bucket.Arn}/chunks/*"
+          - Sid: ListBucket
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !GetAtt Bucket.Arn
+
+  # ----------------------------------------------------------- job table ----
+  DownloadsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # --------------------------------------------------------- worker lambda --
+  WorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref RunnerPolicy
+      Policies:
+        - PolicyName: JobTableUpdate
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !GetAtt DownloadsTable.Arn
+
+  WorkerFunction:
+    Condition: ComputeEnabled
+    Type: AWS::Lambda::Function
+    Properties:
+      PackageType: Image
+      Code:
+        ImageUri: !Sub "${EcrRepository.RepositoryUri}:${WorkerImageTag}"
+      Role: !GetAtt WorkerRole.Arn
+      Architectures: [arm64]
+      MemorySize: 4096
+      Timeout: 900
+      EphemeralStorage:
+        Size: 4096
+      ImageConfig:
+        EntryPoint: ["/usr/local/bin/python", "-m", "awslambdaric"]
+        Command: ["lambda_handler.handler"]
+        WorkingDirectory: /app
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DownloadsTable
+          AUDIO_DL_COOKIES_S3: !Sub "s3://${Bucket}/cookies/cookies.txt"
+          AUDIO_DL_S3_OUTPUT: !Sub "s3://${Bucket}/audio/"
+          AUDIO_DL_TRANSCRIPTS_S3: !Sub "s3://${Bucket}/transcripts/"
+          DENO_DIR: /tmp/deno-cache
+          HOME: /tmp
+          WHISPER_MODEL_PATH: /opt/whisper-models/base
+
+  # -------------------------------------------------------- state machine ---
+  StateMachineRole:
+    Condition: ComputeEnabled
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: states.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PipelinePermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt WorkerFunction.Arn
+              - Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !GetAtt DownloadsTable.Arn
+
+  # The whole pipeline lives inside a single-branch Parallel state with a hard
+  # 900s timeout and Catch on States.ALL (incl. States.Timeout): any failure
+  # OR a >15-min run ends with the job's DynamoDB status set to "error".
+  # (A top-level state-machine TimeoutSeconds would abort uncatchably.)
+  PipelineStateMachine:
+    Condition: ComputeEnabled
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StateMachineRole.Arn
+      DefinitionString: !Sub |
+        {
+          "StartAt": "Pipeline",
+          "TimeoutSeconds": 900,
+          "States": {
+            "Pipeline": {
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "StartAt": "Download",
+                  "States": {
+                    "Download": {
+                      "Type": "Task",
+                      "Resource": "${WorkerFunction.Arn}",
+                      "Parameters": {
+                        "step": "download",
+                        "id.$": "$.id",
+                        "url.$": "$.url"
+                      },
+                      "Retry": [
+                        {
+                          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+                          "IntervalSeconds": 5,
+                          "MaxAttempts": 2
+                        }
+                      ],
+                      "TimeoutSeconds": 600,
+                      "Next": "SingleOrChunked"
+                    },
+                    "SingleOrChunked": {
+                      "Type": "Choice",
+                      "Choices": [
+                        {
+                          "Variable": "$.duration",
+                          "NumericGreaterThan": ${ChunkThresholdSeconds},
+                          "Next": "ChunkAudio"
+                        }
+                      ],
+                      "Default": "TranscribeSingle"
+                    },
+                    "TranscribeSingle": {
+                      "Type": "Task",
+                      "Resource": "${WorkerFunction.Arn}",
+                      "Parameters": {
+                        "step": "transcribe",
+                        "id.$": "$.id",
+                        "s3_key.$": "$.s3_key"
+                      },
+                      "Retry": [
+                        {
+                          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+                          "IntervalSeconds": 5,
+                          "MaxAttempts": 2
+                        }
+                      ],
+                      "TimeoutSeconds": 880,
+                      "End": true
+                    },
+                    "ChunkAudio": {
+                      "Type": "Task",
+                      "Resource": "${WorkerFunction.Arn}",
+                      "Parameters": {
+                        "step": "chunk",
+                        "id.$": "$.id",
+                        "s3_key.$": "$.s3_key"
+                      },
+                      "Retry": [
+                        {
+                          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+                          "IntervalSeconds": 5,
+                          "MaxAttempts": 2
+                        }
+                      ],
+                      "TimeoutSeconds": 180,
+                      "Next": "TranscribeChunks"
+                    },
+                    "TranscribeChunks": {
+                      "Type": "Map",
+                      "ItemsPath": "$.chunks",
+                      "MaxConcurrency": 8,
+                      "ItemSelector": {
+                        "step": "transcribe_chunk",
+                        "id.$": "$$.Map.Item.Value.id",
+                        "key.$": "$$.Map.Item.Value.key",
+                        "offset_s.$": "$$.Map.Item.Value.offset_s"
+                      },
+                      "ItemProcessor": {
+                        "ProcessorConfig": { "Mode": "INLINE" },
+                        "StartAt": "TranscribeChunk",
+                        "States": {
+                          "TranscribeChunk": {
+                            "Type": "Task",
+                            "Resource": "${WorkerFunction.Arn}",
+                            "Retry": [
+                              {
+                                "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+                                "IntervalSeconds": 5,
+                                "MaxAttempts": 2
+                              }
+                            ],
+                            "TimeoutSeconds": 600,
+                            "End": true
+                          }
+                        }
+                      },
+                      "ResultPath": "$.results",
+                      "Next": "Merge"
+                    },
+                    "Merge": {
+                      "Type": "Task",
+                      "Resource": "${WorkerFunction.Arn}",
+                      "Parameters": {
+                        "step": "merge",
+                        "id.$": "$.id",
+                        "s3_key.$": "$.s3_key",
+                        "results.$": "$.results"
+                      },
+                      "Retry": [
+                        {
+                          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+                          "IntervalSeconds": 5,
+                          "MaxAttempts": 2
+                        }
+                      ],
+                      "TimeoutSeconds": 180,
+                      "End": true
+                    }
+                  }
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "ResultPath": "$.errorInfo",
+                  "Next": "RecordError"
+                }
+              ],
+              "Next": "Succeed"
+            },
+            "RecordError": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${DownloadsTable}",
+                "Key": { "id": { "S.$": "$.id" } },
+                "UpdateExpression": "SET #s = :s, #e = :e",
+                "ExpressionAttributeNames": { "#s": "status", "#e": "error" },
+                "ExpressionAttributeValues": {
+                  ":s": { "S": "error" },
+                  ":e": { "S.$": "States.Format('workflow failed: {}', $.errorInfo.Cause)" }
+                }
+              },
+              "Next": "FailState"
+            },
+            "FailState": {
+              "Type": "Fail",
+              "Error": "PipelineFailed",
+              "Cause": "See the job's DynamoDB item and worker logs."
+            },
+            "Succeed": { "Type": "Succeed" }
+          }
+        }
+
+  # ------------------------------------------------------------ HTTP API ----
+  ApiRole:
+    Condition: ComputeEnabled
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ApiPermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:Scan]
+                Resource: !GetAtt DownloadsTable.Arn
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref PipelineStateMachine
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub "${Bucket.Arn}/audio/*"
+                  - !Sub "${Bucket.Arn}/transcripts/*"
+
+  ApiFunction:
+    Condition: ComputeEnabled
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.14
+      Handler: index.handler
+      Role: !GetAtt ApiRole.Arn
+      Timeout: 15
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DownloadsTable
+          AUTH_TOKEN: !Ref ApiAuthToken
+          STATE_MACHINE_ARN: !Ref PipelineStateMachine
+          BUCKET: !Ref Bucket
+      Code:
+        ZipFile: |
+          import base64, hashlib, hmac, json, os, uuid
+          from datetime import datetime, timezone
+          from urllib.parse import urlparse
+          import boto3
+
+          TK = os.environ['AUTH_TOKEN']
+          TABLE = boto3.resource('dynamodb').Table(os.environ['TABLE_NAME'])
+          SFN = boto3.client('stepfunctions')
+          S3 = boto3.client('s3')
+          BUCKET = os.environ['BUCKET']
+          SM_ARN = os.environ['STATE_MACHINE_ARN']
+          TTL_DAYS = 30
+          INLINE_TRANSCRIPT_MAX = 50_000
+
+          def resp(c, b):
+              return {'statusCode': c,
+                      'headers': {'Content-Type': 'application/json'},
+                      'body': json.dumps(b, default=str)}
+
+          def sign(payload):
+              mac = hmac.new(TK.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+              return base64.urlsafe_b64encode(f'{payload}.{mac}'.encode()).decode()
+
+          def unsign(token):
+              try:
+                  raw = base64.urlsafe_b64decode(token.encode()).decode()
+                  payload, mac = raw.rsplit('.', 1)
+                  good = hmac.new(TK.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+                  return payload if hmac.compare_digest(mac, good) else None
+              except Exception:
+                  return None
+
+          def presign(key):
+              return S3.generate_presigned_url(
+                  'get_object', Params={'Bucket': BUCKET, 'Key': key}, ExpiresIn=3600)
+
+          STALE_AFTER_S = 1200  # workflow hard-cap is 900s; >20min non-terminal = dead
+
+          def get_one(job_id):
+              item = TABLE.get_item(Key={'id': job_id}).get('Item')
+              if not item:
+                  return resp(404, {'error': 'not found'})
+              # Read-time staleness fallback: the state machine's top-level
+              # timeout is uncatchable, so a job killed by it can't update its
+              # own status. Report it as an error instead of leaving it stuck.
+              if item.get('status') not in ('done', 'error'):
+                  try:
+                      created = datetime.fromisoformat(item['created_at'])
+                      age = (datetime.now(timezone.utc) - created).total_seconds()
+                      if age > STALE_AFTER_S:
+                          item['status'] = 'error'
+                          item['error'] = 'timed out (workflow exceeded the 15-minute deadline)'
+                  except Exception:
+                      pass
+              if item.get('status') == 'done':
+                  if item.get('s3_key'):
+                      item['download_url'] = presign(item['s3_key'])
+                  if item.get('transcript_key'):
+                      item['transcript_url'] = presign(item['transcript_key'])
+                  if item.get('transcript_clean_key'):
+                      item['transcript_clean_url'] = presign(item['transcript_clean_key'])
+                      try:
+                          body = S3.get_object(Bucket=BUCKET, Key=item['transcript_clean_key'])['Body'].read()
+                          text = body.decode('utf-8', 'replace')
+                          item['transcript'] = text[:INLINE_TRANSCRIPT_MAX]
+                          item['transcript_truncated'] = len(text) > INLINE_TRANSCRIPT_MAX
+                      except Exception:
+                          pass
+              return resp(200, item)
+
+          def list_jobs(params):
+              kwargs = {'Limit': min(int(params.get('limit', '25')), 100)}
+              nt = params.get('next_token')
+              if nt:
+                  start = unsign(nt)
+                  if start is None:
+                      return resp(400, {'error': 'bad next_token'})
+                  kwargs['ExclusiveStartKey'] = {'id': start}
+              r = TABLE.scan(**kwargs)
+              out = {'items': r.get('Items', [])}
+              lek = r.get('LastEvaluatedKey')
+              if lek:
+                  out['next_token'] = sign(lek['id'])
+              return resp(200, out)
+
+          def create(body):
+              try:
+                  data = json.loads(body or '{}')
+              except json.JSONDecodeError:
+                  return resp(400, {'error': 'invalid JSON'})
+              url = (data.get('url') or '').strip()
+              p = urlparse(url)
+              if p.scheme not in ('http', 'https') or not p.netloc or len(url) > 2048:
+                  return resp(400, {'error': 'url must be a valid http(s) URL'})
+              job_id = str(uuid.uuid4())
+              now = datetime.now(timezone.utc)
+              TABLE.put_item(Item={
+                  'id': job_id, 'url': url, 'status': 'queued',
+                  'created_at': now.isoformat(),
+                  'ttl': int(now.timestamp()) + TTL_DAYS * 86400,
+              })
+              SFN.start_execution(
+                  stateMachineArn=SM_ARN, name=job_id,
+                  input=json.dumps({'id': job_id, 'url': url}))
+              return resp(202, {'id': job_id, 'status': 'queued'})
+
+          def handler(event, context):
+              hdrs = {k.lower(): v for k, v in (event.get('headers') or {}).items()}
+              if not hmac.compare_digest(hdrs.get('x-api-token', ''), TK):
+                  return resp(401, {'error': 'unauthorized'})
+              http = event.get('requestContext', {}).get('http', {})
+              method, path = http.get('method', ''), http.get('path', '')
+              job_id = (event.get('pathParameters') or {}).get('id')
+              params = event.get('queryStringParameters') or {}
+              if method == 'POST' and path.endswith('/downloads'):
+                  return create(event.get('body') and (
+                      base64.b64decode(event['body']).decode()
+                      if event.get('isBase64Encoded') else event['body']))
+              if method == 'GET' and job_id:
+                  return get_one(job_id)
+              if method == 'GET' and path.endswith('/downloads'):
+                  return list_jobs(params)
+              return resp(405, {'error': 'method not allowed'})
+
+  HttpApi:
+    Condition: ComputeEnabled
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: audio-downloader
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: ["*"]
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: [content-type, x-api-token]
+
+  ApiIntegration:
+    Condition: ComputeEnabled
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ApiFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  PostRoute:
+    Condition: ComputeEnabled
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /downloads"
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  ListRoute:
+    Condition: ComputeEnabled
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /downloads"
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  GetRoute:
+    Condition: ComputeEnabled
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /downloads/{id}"
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  ApiStage:
+    Condition: ComputeEnabled
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: "$default"
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingRateLimit: !Ref ThrottleRateLimit
+        ThrottlingBurstLimit: !Ref ThrottleBurstLimit
+
+  ApiInvokePermission:
+    Condition: ComputeEnabled
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*"
+
+Outputs:
+  BucketName:
+    Value: !Ref Bucket
+  RunnerPolicyArn:
+    Description: Attach to anything else that needs pipeline S3 access.
+    Value: !Ref RunnerPolicy
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
+  CookiesS3Env:
+    Description: Value for AUDIO_DL_COOKIES_S3
+    Value: !Sub "s3://${Bucket}/cookies/cookies.txt"
+  S3OutputEnv:
+    Description: Value for AUDIO_DL_S3_OUTPUT
+    Value: !Sub "s3://${Bucket}/audio/"
+  ApiUrl:
+    Condition: ComputeEnabled
+    Description: Base URL of the HTTP API.
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  DownloadsTableName:
+    Value: !Ref DownloadsTable
+  WorkerFunctionName:
+    Condition: ComputeEnabled
+    Value: !Ref WorkerFunction
+  StateMachineArn:
+    Condition: ComputeEnabled
+    Value: !Ref PipelineStateMachine
