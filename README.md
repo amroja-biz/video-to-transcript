@@ -5,11 +5,11 @@ YouTube, Instagram, Facebook, X.com — anything
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports — and it produces MP3s plus
 paragraph-formatted transcripts (faster-whisper). Two ways to use it:
 
-1. **Local CLI** — `python audio_downloader.py <url>` (download only)
+1. **Local CLI** — `python video_to_transcript.py <url>` (download only)
 2. **HTTPS endpoint on AWS** — `./deploy.sh` once, then POST a URL from desktop
    or phone; a Step Functions pipeline downloads, transcribes (chunking long
    audio in parallel, hard 15-min deadline), stores everything in
-   `s3://amroja-audio/{audio,transcripts}/`, and tracks job state in DynamoDB.
+   `s3://amroja-video-to-transcript/{audio,transcripts}/`, and tracks job state in DynamoDB.
    See [API usage](#api-usage) below for curl and iOS Shortcut examples.
 
 **Why cookies matter:** YouTube/Instagram/Facebook block datacenter IPs (AWS,
@@ -35,14 +35,14 @@ pip install -r requirements.txt
 
 ```bash
 # Single URL (uses your Chrome cookies automatically)
-python audio_downloader.py "https://www.youtube.com/watch?v=..."
+python video_to_transcript.py "https://www.youtube.com/watch?v=..."
 
 # Multiple URLs, custom output dir
-python audio_downloader.py -o ~/Music/rips "https://instagram.com/reel/..." "https://x.com/i/status/..."
+python video_to_transcript.py -o ~/Music/rips "https://instagram.com/reel/..." "https://x.com/i/status/..."
 
 # Explicit cookies file / different browser
-python audio_downloader.py --cookies cookies.txt URL
-python audio_downloader.py --cookies-from-browser firefox URL
+python video_to_transcript.py --cookies cookies.txt URL
+python video_to_transcript.py --cookies-from-browser firefox URL
 ```
 
 MP3s land in `downloads/YYYY-MM-DD/`. First Chrome-cookie run prompts for
@@ -55,7 +55,7 @@ macOS Keychain access — click "Always Allow".
 ```
 
 This builds + pushes the arm64 image, generates/persists the API token
-(`.api-token`), deploys the CloudFormation stack (bucket `amroja-audio`,
+(`.api-token`), deploys the CloudFormation stack (bucket `amroja-video-to-transcript`,
 DynamoDB job table, worker Lambda, Step Functions pipeline, throttled HTTP
 API), and smoke-tests auth. On success it prints the **API endpoint and
 token to the console — save the token** (e.g. in 1Password; it's also kept
@@ -134,44 +134,44 @@ curl -s "$URL/downloads?limit=25" -H "x-api-token: $TOKEN"
 
 - Refresh cookies when downloads fail with bot/auth errors: `./refresh-cookies.sh`
 - Redeploy after code changes: `./deploy.sh`
-- Tear down: `aws cloudformation delete-stack --stack-name audio-downloader --profile sandbox`
+- Tear down: `aws cloudformation delete-stack --stack-name video-to-transcript --profile sandbox`
   (bucket must be emptied first)
 
 ## Refresh cookies (do this whenever cloud downloads start failing with bot/auth errors)
 
 ```bash
-./refresh-cookies.sh                 # uses $AUDIO_DL_BUCKET and profile "sandbox"
+./refresh-cookies.sh                 # uses $V2T_BUCKET and profile "sandbox"
 ./refresh-cookies.sh -b my-bucket -p other-profile -B firefox
 ```
 
 Exports your entire Chrome cookie jar (covers YouTube + IG + FB + X) and
-uploads it to `s3://$AUDIO_DL_BUCKET/cookies/cookies.txt` (versioned, so you
+uploads it to `s3://$V2T_BUCKET/cookies/cookies.txt` (versioned, so you
 can roll back).
 
 ## Build & push the image
 
 ```bash
-docker build -t audio-downloader .            # arm64 on Apple Silicon
-ECR=$(aws cloudformation describe-stacks --stack-name audio-downloader \
+docker build -t video-to-transcript .            # arm64 on Apple Silicon
+ECR=$(aws cloudformation describe-stacks --stack-name video-to-transcript \
   --query 'Stacks[0].Outputs[?OutputKey==`EcrRepositoryUri`].OutputValue' \
   --output text --profile sandbox)
 aws ecr get-login-password --profile sandbox | docker login --username AWS --password-stdin "${ECR%%/*}"
-docker tag audio-downloader "$ECR:latest"
+docker tag video-to-transcript "$ECR:latest"
 docker push "$ECR:latest"
 ```
 
-Need x86? `docker buildx build --platform linux/amd64 -t audio-downloader .`
+Need x86? `docker buildx build --platform linux/amd64 -t video-to-transcript .`
 
 ## Run on AWS (Graviton EC2 with the policy attached)
 
 ```bash
 docker run --rm \
-  -e AUDIO_DL_COOKIES_S3=s3://$AUDIO_DL_BUCKET/cookies/cookies.txt \
-  -e AUDIO_DL_S3_OUTPUT=s3://$AUDIO_DL_BUCKET/audio/ \
+  -e V2T_COOKIES_S3=s3://$V2T_BUCKET/cookies/cookies.txt \
+  -e V2T_S3_OUTPUT=s3://$V2T_BUCKET/audio/ \
   "$ECR:latest" "https://www.youtube.com/watch?v=..."
 
 # Retrieve the MP3
-aws s3 cp s3://$AUDIO_DL_BUCKET/audio/<file>.mp3 . --profile sandbox
+aws s3 cp s3://$V2T_BUCKET/audio/<file>.mp3 . --profile sandbox
 ```
 
 ECS alternative: register a Fargate task definition (`runtimePlatform:

@@ -1,4 +1,4 @@
-# audio-downloader — audio-only (MP3) downloader for AWS.
+# video-to-transcript — audio-only (MP3) downloader for AWS.
 #
 # Architecture: arch-neutral. Primary target is linux/arm64 (AWS Graviton —
 # cheaper, and ffmpeg/Deno/yt-dlp all ship arm64 builds; an Apple Silicon Mac
@@ -48,10 +48,10 @@ snapshot_download('Systran/faster-whisper-base', local_dir='/opt/whisper-models/
     && chmod -R a+rX /opt/whisper-models
 ENV WHISPER_MODEL_PATH=/opt/whisper-models/base
 
-COPY audio_downloader.py lambda_handler.py entrypoint.sh ./
+COPY video_to_transcript.py lambda_handler.py entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
-ENV AUDIO_DL_IN_CONTAINER=1
+ENV V2T_IN_CONTAINER=1
 # /work is the default local output dir; mount a volume here if you want the
 # files locally instead of (or in addition to) S3.
 WORKDIR /work

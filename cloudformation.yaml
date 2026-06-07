@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  audio-downloader: download audio (MP3) from any yt-dlp-supported site and
+  video-to-transcript: download audio (MP3) from any yt-dlp-supported site and
   auto-transcribe it with faster-whisper. Private S3 bucket (cookies/ input,
   audio/ + transcripts/ output), ECR repo for the worker image, DynamoDB job
   table, token-protected HTTP API, and a Step Functions pipeline with a hard
@@ -9,7 +9,7 @@ Description: >
 Parameters:
   BucketName:
     Type: String
-    Default: amroja-audio
+    Default: amroja-video-to-transcript
     Description: Name of the S3 bucket for cookies, audio, and transcripts.
   ApiAuthToken:
     Type: String
@@ -93,7 +93,7 @@ Resources:
   EcrRepository:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: audio-downloader
+      RepositoryName: video-to-transcript
       ImageScanningConfiguration:
         ScanOnPush: true
       LifecyclePolicy:
@@ -116,7 +116,7 @@ Resources:
   RunnerPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      Description: Lets the audio-downloader pipeline read cookies and write outputs.
+      Description: Lets the video-to-transcript pipeline read cookies and write outputs.
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -198,9 +198,9 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref DownloadsTable
-          AUDIO_DL_COOKIES_S3: !Sub "s3://${Bucket}/cookies/cookies.txt"
-          AUDIO_DL_S3_OUTPUT: !Sub "s3://${Bucket}/audio/"
-          AUDIO_DL_TRANSCRIPTS_S3: !Sub "s3://${Bucket}/transcripts/"
+          V2T_COOKIES_S3: !Sub "s3://${Bucket}/cookies/cookies.txt"
+          V2T_S3_OUTPUT: !Sub "s3://${Bucket}/audio/"
+          V2T_TRANSCRIPTS_S3: !Sub "s3://${Bucket}/transcripts/"
           DENO_DIR: /tmp/deno-cache
           HOME: /tmp
           WHISPER_MODEL_PATH: /opt/whisper-models/base
@@ -576,7 +576,7 @@ Resources:
     Condition: ComputeEnabled
     Type: AWS::ApiGatewayV2::Api
     Properties:
-      Name: audio-downloader
+      Name: video-to-transcript
       ProtocolType: HTTP
       CorsConfiguration:
         AllowOrigins: ["*"]
@@ -645,10 +645,10 @@ Outputs:
   EcrRepositoryUri:
     Value: !GetAtt EcrRepository.RepositoryUri
   CookiesS3Env:
-    Description: Value for AUDIO_DL_COOKIES_S3
+    Description: Value for V2T_COOKIES_S3
     Value: !Sub "s3://${Bucket}/cookies/cookies.txt"
   S3OutputEnv:
-    Description: Value for AUDIO_DL_S3_OUTPUT
+    Description: Value for V2T_S3_OUTPUT
     Value: !Sub "s3://${Bucket}/audio/"
   ApiUrl:
     Condition: ComputeEnabled

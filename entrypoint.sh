@@ -27,4 +27,4 @@ for i in $(seq 1 30); do
   sleep 0.5
 done
 
-exec python /app/audio_downloader.py "$@"
+exec python /app/video_to_transcript.py "$@"

@@ -1,4 +1,4 @@
-"""Lambda worker for the audio-downloader Step Functions pipeline.
+"""Lambda worker for the video-to-transcript Step Functions pipeline.
 
 One container-image Lambda serves every compute state in the state machine;
 the state machine passes {"step": "<name>", ...} and handler() dispatches:
@@ -31,11 +31,11 @@ from pathlib import Path
 # Writable-location plumbing must happen before yt_dlp/boto3 imports.
 os.environ.setdefault("HOME", "/tmp")
 os.environ.setdefault("XDG_CACHE_HOME", "/tmp/.cache")
-os.environ.setdefault("AUDIO_DL_CACHE_DIR", "/tmp/yt-dlp-cache")
+os.environ.setdefault("V2T_CACHE_DIR", "/tmp/yt-dlp-cache")
 
 import boto3
 
-from audio_downloader import AudioDownloader, parse_s3_uri, pot_server_reachable
+from video_to_transcript import AudioDownloader, parse_s3_uri, pot_server_reachable
 
 # ---- paragraph formatting tunables ----
 PAUSE_BREAK_S = 1.5        # gap between segments that forces a paragraph break
@@ -50,8 +50,8 @@ CHUNK_SECONDS = 600        # 10-minute chunks for long audio
 POT_SERVER = "http://127.0.0.1:4416"
 
 TABLE_NAME = os.environ.get("TABLE_NAME", "")
-TRANSCRIPTS_S3 = os.environ.get("AUDIO_DL_TRANSCRIPTS_S3", "")
-AUDIO_S3 = os.environ.get("AUDIO_DL_S3_OUTPUT", "")
+TRANSCRIPTS_S3 = os.environ.get("V2T_TRANSCRIPTS_S3", "")
+AUDIO_S3 = os.environ.get("V2T_S3_OUTPUT", "")
 
 _table = None
 _s3 = None

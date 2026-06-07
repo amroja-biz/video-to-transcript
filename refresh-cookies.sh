@@ -3,7 +3,7 @@
 # to S3 where the AWS container picks it up.
 #
 # Usage:
-#   AUDIO_DL_BUCKET=<bucket> ./refresh-cookies.sh
+#   V2T_BUCKET=<bucket> ./refresh-cookies.sh
 #   ./refresh-cookies.sh -b <bucket> [-p <aws-profile>] [-B <browser>]
 #
 # Notes:
@@ -14,7 +14,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-BUCKET="${AUDIO_DL_BUCKET:-amroja-audio}"
+BUCKET="${V2T_BUCKET:-amroja-video-to-transcript}"
 PROFILE="${AWS_PROFILE:-sandbox}"
 BROWSER="chrome"
 

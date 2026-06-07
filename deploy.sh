@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command setup/deploy for audio-downloader: builds and pushes the worker
+# One-command setup/deploy for video-to-transcript: builds and pushes the worker
 # image, manages the API auth token, deploys CloudFormation, points the worker
 # Lambda at the new image, smoke-tests the endpoint, and prints the API
 # endpoint + token on success.
@@ -10,7 +10,7 @@ cd "$(dirname "$0")"
 
 PROFILE="${AWS_PROFILE:-sandbox}"
 REGION="us-east-1"
-STACK="audio-downloader"
+STACK="video-to-transcript"
 
 while getopts "p:r:" opt; do
   case $opt in
@@ -23,7 +23,7 @@ done
 AWS=(aws --profile "$PROFILE" --region "$REGION")
 ACCOUNT=$("${AWS[@]}" sts get-caller-identity --query Account --output text)
 ECR_HOST="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
-ECR_URI="${ECR_HOST}/audio-downloader"
+ECR_URI="${ECR_HOST}/video-to-transcript"
 
 stack_output() {
   "${AWS[@]}" cloudformation describe-stacks --stack-name "$STACK" \
@@ -41,7 +41,7 @@ echo "==> Pushing to ECR ..."
 # The ECR repo is created by the stack; on the very first run it may not exist
 # yet, so create it on the fly (CloudFormation will adopt it by name? No — it
 # can't adopt; instead, push only if the repo exists, else defer the push).
-if "${AWS[@]}" ecr describe-repositories --repository-names audio-downloader >/dev/null 2>&1; then
+if "${AWS[@]}" ecr describe-repositories --repository-names video-to-transcript >/dev/null 2>&1; then
   "${AWS[@]}" ecr get-login-password | docker login --username AWS --password-stdin "$ECR_HOST" >/dev/null
   docker push "${ECR_URI}:latest" >/dev/null
   PUSHED=1
@@ -59,24 +59,27 @@ fi
 TOKEN="$(cat .api-token)"
 
 # --- 3. Deploy the stack ------------------------------------------------------
-# First run: deploy infra-only first (worker Lambda needs the image in ECR).
+# First run (no ECR repo yet): deploy storage-only (ProvisionCompute=false) so
+# the stack creates the repo, push the image, then deploy compute too.
 echo "==> Deploying CloudFormation stack ..."
 if [[ "$PUSHED" == "0" ]]; then
-  echo "    First run: this will fail at WorkerFunction if the image isn't pushed."
-  echo "    Strategy: create stack; if WorkerFunction fails, push image and retry."
+  echo "    First run: deploying storage-only stack to create the ECR repo ..."
+  "${AWS[@]}" cloudformation deploy \
+    --template-file cloudformation.yaml \
+    --stack-name "$STACK" \
+    --capabilities CAPABILITY_IAM \
+    --parameter-overrides "ApiAuthToken=${TOKEN}" "ProvisionCompute=false" \
+    --no-fail-on-empty-changeset
+  echo "==> Pushing image to newly created repo ..."
+  "${AWS[@]}" ecr get-login-password | docker login --username AWS --password-stdin "$ECR_HOST" >/dev/null
+  docker push "${ECR_URI}:latest" >/dev/null
 fi
 "${AWS[@]}" cloudformation deploy \
   --template-file cloudformation.yaml \
   --stack-name "$STACK" \
   --capabilities CAPABILITY_IAM \
-  --parameter-overrides "ApiAuthToken=${TOKEN}" \
+  --parameter-overrides "ApiAuthToken=${TOKEN}" "ProvisionCompute=true" \
   --no-fail-on-empty-changeset
-
-if [[ "$PUSHED" == "0" ]]; then
-  echo "==> Pushing image to newly created repo ..."
-  "${AWS[@]}" ecr get-login-password | docker login --username AWS --password-stdin "$ECR_HOST" >/dev/null
-  docker push "${ECR_URI}:latest" >/dev/null
-fi
 
 # --- 4. Point the worker Lambda at the freshly pushed digest ------------------
 WORKER=$(stack_output WorkerFunctionName)
@@ -87,20 +90,7 @@ if [[ -n "$WORKER" && "$WORKER" != "None" ]]; then
   "${AWS[@]}" lambda wait function-updated --function-name "$WORKER"
 fi
 
-# --- 5. Migrate cookies from the old bucket (one-time) ------------------------
-BUCKET=$(stack_output BucketName)
-OLD_BUCKET="audio-downloader-${ACCOUNT}"
-if [[ "$BUCKET" != "$OLD_BUCKET" ]] \
-   && "${AWS[@]}" s3api head-bucket --bucket "$OLD_BUCKET" >/dev/null 2>&1; then
-  if "${AWS[@]}" s3api head-object --bucket "$OLD_BUCKET" --key cookies/cookies.txt >/dev/null 2>&1; then
-    echo "==> Migrating cookies from $OLD_BUCKET to $BUCKET ..."
-    "${AWS[@]}" s3 cp "s3://$OLD_BUCKET/cookies/cookies.txt" "s3://$BUCKET/cookies/cookies.txt" --sse AES256 >/dev/null
-  fi
-  echo "    NOTE: old bucket $OLD_BUCKET still exists. After verifying, remove it with:"
-  echo "      aws s3 rb s3://$OLD_BUCKET --force --profile $PROFILE"
-fi
-
-# --- 6. Smoke test -------------------------------------------------------------
+# --- 5. Smoke test -------------------------------------------------------------
 API=$(stack_output ApiUrl)
 echo "==> Smoke testing $API ..."
 GOOD=$(curl -s -o /dev/null -w '%{http_code}' "$API/downloads?limit=1" -H "x-api-token: $TOKEN")
@@ -112,7 +102,7 @@ else
   exit 1
 fi
 
-# --- 7. Print endpoint + token -------------------------------------------------
+# --- 6. Print endpoint + token -------------------------------------------------
 echo
 echo "✓ Deployed."
 echo

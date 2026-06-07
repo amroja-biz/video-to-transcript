@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""audio-downloader: CLI-only, audio-only (MP3) downloader.
+"""video-to-transcript: CLI-only, audio-only (MP3) downloader.
 
 Downloads audio from YouTube, Instagram, Facebook, X.com, and any other
 site yt-dlp supports. Runs locally (uses your browser cookies) or in a
 Docker container on AWS (pulls cookies from S3, can upload results to S3).
 
 Usage:
-    python audio_downloader.py URL [URL ...]
-    python audio_downloader.py --cookies cookies.txt URL
-    python audio_downloader.py --s3-output s3://bucket/audio/ URL
+    python video_to_transcript.py URL [URL ...]
+    python video_to_transcript.py --cookies cookies.txt URL
+    python video_to_transcript.py --s3-output s3://bucket/audio/ URL
 
 Environment variables (used by the AWS/container path):
-    AUDIO_DL_COOKIES_S3   s3://bucket/cookies/cookies.txt  (cookie source)
-    AUDIO_DL_S3_OUTPUT    s3://bucket/audio/               (where MP3s land)
-    AUDIO_DL_POT_SERVER   http://127.0.0.1:4416            (bgutil POT server)
-    AUDIO_DL_IN_CONTAINER set to 1 inside Docker (disables browser cookies)
+    V2T_COOKIES_S3   s3://bucket/cookies/cookies.txt  (cookie source)
+    V2T_S3_OUTPUT    s3://bucket/audio/               (where MP3s land)
+    V2T_POT_SERVER   http://127.0.0.1:4416            (bgutil POT server)
+    V2T_IN_CONTAINER set to 1 inside Docker (disables browser cookies)
 """
 
 import argparse
@@ -70,7 +70,7 @@ def pot_server_reachable(url, timeout=1.0):
 class AudioDownloader:
     def __init__(self, args):
         self.args = args
-        self.in_container = os.environ.get("AUDIO_DL_IN_CONTAINER") == "1"
+        self.in_container = os.environ.get("V2T_IN_CONTAINER") == "1"
         self.tmp_cookie_file = None
         self.last_info = None   # yt-dlp info dict from the most recent download
         self.last_error = None  # error string from the most recent failure
@@ -79,7 +79,7 @@ class AudioDownloader:
         self.out_dir = Path(args.output_dir) / date_dir
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
-        self.s3_output = args.s3_output or os.environ.get("AUDIO_DL_S3_OUTPUT")
+        self.s3_output = args.s3_output or os.environ.get("V2T_S3_OUTPUT")
         if self.s3_output:
             self.s3_bucket, self.s3_prefix = parse_s3_uri(self.s3_output)
 
@@ -89,7 +89,7 @@ class AudioDownloader:
 
     def _resolve_cookies(self, opts):
         """Apply cookie source in priority order:
-        --cookies file > AUDIO_DL_COOKIES_S3 > browser (local only) > anonymous.
+        --cookies file > V2T_COOKIES_S3 > browser (local only) > anonymous.
         """
         if self.args.cookies:
             path = Path(self.args.cookies)
@@ -100,7 +100,7 @@ class AudioDownloader:
             print(f"Using cookies file: {path}")
             return
 
-        cookies_s3 = os.environ.get("AUDIO_DL_COOKIES_S3")
+        cookies_s3 = os.environ.get("V2T_COOKIES_S3")
         if cookies_s3:
             bucket, key = parse_s3_uri(cookies_s3)
             fd, tmp_path = tempfile.mkstemp(suffix=".txt", prefix="cookies-")
@@ -141,7 +141,7 @@ class AudioDownloader:
             ],
             "outtmpl": str(self.out_dir / "%(uploader)s_%(title)s_%(id)s.%(ext)s"),
             "noplaylist": True,
-            "cachedir": os.environ.get("AUDIO_DL_CACHE_DIR") or None,
+            "cachedir": os.environ.get("V2T_CACHE_DIR") or None,
             "quiet": not self.args.verbose,
             "no_warnings": not self.args.verbose,
             "progress": True,
@@ -150,7 +150,7 @@ class AudioDownloader:
 
         pot_server = (
             self.args.pot_server
-            or os.environ.get("AUDIO_DL_POT_SERVER")
+            or os.environ.get("V2T_POT_SERVER")
             or DEFAULT_POT_SERVER
         )
         if pot_server_reachable(pot_server):
@@ -230,7 +230,7 @@ def main():
     parser.add_argument(
         "--s3-output", metavar="S3URI",
         help="Upload MP3s to this S3 prefix, e.g. s3://bucket/audio/ "
-             "(or set AUDIO_DL_S3_OUTPUT)",
+             "(or set V2T_S3_OUTPUT)",
     )
     parser.add_argument(
         "--keep-local", action="store_true",
@@ -242,7 +242,7 @@ def main():
     )
     parser.add_argument(
         "--pot-server", metavar="URL",
-        help=f"bgutil PO-token server URL (default: $AUDIO_DL_POT_SERVER or {DEFAULT_POT_SERVER})",
+        help=f"bgutil PO-token server URL (default: $V2T_POT_SERVER or {DEFAULT_POT_SERVER})",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose yt-dlp output")
     args = parser.parse_args()

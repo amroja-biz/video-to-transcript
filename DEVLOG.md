@@ -145,6 +145,27 @@ with `-c copy` (no overlap) — acceptable for now; overlapping chunks would fix
 it if it ever matters. Same day, X.com and Instagram URLs were also verified
 end-to-end through the short path.
 
+### Full rename: audio-downloader → video-to-transcript (2026-06-07)
+Everything renamed, including live infrastructure. CloudFormation can't rename
+a stack, so this was create-new + migrate + delete-old:
+- Code: `audio_downloader.py` → `video_to_transcript.py`, all `AUDIO_DL_*`
+  env vars → `V2T_*` (Python, Dockerfile, CloudFormation, refresh-cookies.sh)
+- New stack `video-to-transcript`: new bucket `amroja-video-to-transcript`,
+  new ECR repo `video-to-transcript`, new API endpoint, **new everything-IDs
+  but the same API token** (re-passed from `.api-token`)
+- deploy.sh first-run flow fixed properly: it now uses the template's
+  `ProvisionCompute=false` → push image → `ProvisionCompute=true` two-phase
+  instead of the old "let WorkerFunction fail and retry" strategy. Verified
+  live — the fresh stack came up in one `./deploy.sh` run.
+- Data migrated: `aws s3 sync` of cookies + transcripts + MP3s (13 objects)
+- Verified end-to-end on the new stack ("Me at the zoo" → done, transcript
+  correct) before deleting the old one
+- Teardown order that works: delete all object versions + delete markers
+  (versioned bucket), batch-delete ECR images, then `delete-stack`. Old
+  DynamoDB job history was dropped with the stack (transcripts live in S3).
+- NOT renamed: nothing — this was the full rename. The old API endpoint and
+  job IDs are dead; the iOS Shortcut needs the new endpoint URL.
+
 ---
 
 ## 2026-06-07 - Graduated Out of Scratch
