@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One-command setup/deploy for audio-downloader: builds and pushes the worker
 # image, manages the API auth token, deploys CloudFormation, points the worker
-# Lambda at the new image, smoke-tests the endpoint, and writes USAGE.md.
+# Lambda at the new image, smoke-tests the endpoint, and prints the API
+# endpoint + token on success.
 #
 # Usage: ./deploy.sh [-p aws-profile] [-r region]
 set -euo pipefail
@@ -111,67 +112,12 @@ else
   exit 1
 fi
 
-# --- 7. Write USAGE.md ---------------------------------------------------------
-cat > USAGE.md <<EOF
-# audio-downloader API
-
-**Endpoint:** \`$API\`
-**Auth token:** \`$TOKEN\`  *(keep private — this file is gitignored)*
-
-## Setup
-
-\`\`\`bash
-TOKEN="$TOKEN"
-URL="$API"
-\`\`\`
-
-## Submit a download + transcription job
-
-\`\`\`bash
-curl -s -X POST "\$URL/downloads" \\
-  -H "Content-Type: application/json" \\
-  -H "x-api-token: \$TOKEN" \\
-  -d '{"url": "https://www.youtube.com/watch?v=..."}'
-# -> {"id": "<job-id>", "status": "queued"}
-\`\`\`
-
-## Check status / read the transcript
-
-\`\`\`bash
-curl -s "\$URL/downloads/<job-id>" -H "x-api-token: \$TOKEN"
-\`\`\`
-
-Status flow: \`queued → downloading → downloaded → transcribing → done | error\`.
-When \`done\`, the response includes:
-- \`transcript\` — paragraph-formatted transcript text, inline (truncated at 50KB)
-- \`download_url\` — presigned MP3 link (1h; if it 403s, GET again for a fresh one)
-- \`transcript_url\` / \`transcript_clean_url\` — presigned transcript files
-
-## List jobs
-
-\`\`\`bash
-curl -s "\$URL/downloads?limit=25" -H "x-api-token: \$TOKEN"
-# pass next_token from the response to page
-\`\`\`
-
-## Phone usage (iOS Shortcut)
-
-1. Shortcuts → + → "Receive **URLs** from Share Sheet"
-2. Add action **Get Contents of URL**:
-   - URL: \`$API/downloads\`  — Method: POST
-   - Headers: \`x-api-token: $TOKEN\`, \`Content-Type: application/json\`
-   - Request Body (JSON): \`url\` = Shortcut Input
-3. Name it "Transcribe Audio". Now Share → Transcribe Audio from YouTube/IG/X.
-   (Store the token in 1Password as backup.)
-
-## Ops
-
-- Refresh cookies when downloads fail with bot/auth errors: \`./refresh-cookies.sh\`
-- Redeploy after code changes: \`./deploy.sh\`
-- Tear down: \`aws cloudformation delete-stack --stack-name $STACK --profile $PROFILE\`
-  (bucket must be emptied first)
-EOF
-
+# --- 7. Print endpoint + token -------------------------------------------------
 echo
-echo "✓ Deployed. Endpoint + token + examples: USAGE.md"
-echo "  API: $API"
+echo "✓ Deployed."
+echo
+echo "  API endpoint: $API"
+echo "  API token:    $TOKEN"
+echo
+echo "  SAVE THE TOKEN somewhere safe (e.g. 1Password). It is also persisted"
+echo "  locally in .api-token (gitignored). Usage examples: README.md"
