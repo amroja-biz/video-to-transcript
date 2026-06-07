@@ -1,4 +1,4 @@
-# audio-downloader
+# video-to-transcript
 
 - AWS profile: `sandbox` (use `--profile sandbox` for all AWS CLI commands in this project)
 - Python venv: `.venv/` (Python 3.14) — always activate before running/installing

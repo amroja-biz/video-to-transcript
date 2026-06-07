@@ -1,4 +1,4 @@
-# audio-downloader
+# video-to-transcript
 
 Audio-only downloader **with automatic transcription**. Give it URLs from
 YouTube, Instagram, Facebook, X.com — anything
@@ -25,7 +25,7 @@ arm64 image natively. Use Graviton instances (t4g/m7g/c7g) to run the container.
 
 ```bash
 brew install python@3.14 deno   # deno only needed for YouTube
-cd TOOLS/audio-downloader
+cd video-to-transcript
 /opt/homebrew/opt/python@3.14/bin/python3.14 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
