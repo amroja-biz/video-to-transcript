@@ -144,7 +144,8 @@ writing). Everything is path-relative so nothing broke; the AWS stack
 untouched by the move.
 
 Operational notes for future-me:
-- `./deploy.sh` — build, push, deploy, smoke-test, regenerate USAGE.md
+- `./deploy.sh` — build, push, deploy, smoke-test; prints endpoint + token
+  on success (usage examples live in README.md)
 - `./refresh-cookies.sh` — run when cloud downloads start hitting bot-walls
 - `.api-token` holds the endpoint token (gitignored; CFN NoEcho means it can't
   be recovered from the stack — don't lose it)
