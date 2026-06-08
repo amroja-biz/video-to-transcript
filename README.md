@@ -142,10 +142,18 @@ Build a Shortcut once, then transcribe any video by tapping **Share → your
 Shortcut** in YouTube, Safari, X, Instagram, etc. The Shortcut submits the
 shared URL and shows you the transcript when it's ready.
 
+> **Where's the Shortcuts app?** It's a **built-in Apple app** — you don't need
+> to download anything (if it was deleted, it's free in the App Store under
+> "Shortcuts" by Apple). Its icon is **two overlapping rounded squares on a
+> blue-to-pink gradient**. Don't confuse it with **Settings → Shortcuts**, which
+> is just a configuration page, not the app. Easiest way to open the real app:
+> swipe down on the home screen, search **"Shortcuts"**, and tap the app (the
+> gradient icon). Inside, you'll see a grid of shortcuts and a **+** to add one.
+
 **Build the Shortcut:**
 
-1. Open the **Shortcuts** app → **+** to create a new shortcut → name it
-   "Transcribe".
+1. Open the **Shortcuts** app → tap **+** (top-right) to create a new shortcut →
+   name it "Transcribe".
 2. Tap the **ⓘ** (info) button → enable **Show in Share Sheet**, and set
    **Share Sheet Types** to **URLs** only.
 3. Add these actions in order (tap **+ Add Action** for each):
