@@ -193,6 +193,29 @@ entrypoint is invoked.
 - Verified: local CLI on "Me at the zoo" → correct transcript; cloud redeploy
   + live API run still reaches `done`.
 
+### GitHub-issue bridge for the Claude iOS app (2026-06-08)
+The consumer Claude app can't call the private AWS endpoint (its skill sandbox
+isn't built to make authenticated calls to your own API), but it *can* drive a
+**GitHub connector**. So GitHub became the broker — no AWS changes at all, the
+Action only *calls* the existing API.
+- `.github/workflows/transcribe-request.yml`: triggers on an issue titled
+  `transcribe: <url>`, extracts the URL, POSTs to the AWS API (token +
+  endpoint as repo secrets `V2T_API_TOKEN` / `V2T_API_URL`), polls up to ~15
+  min, then writes the clean transcript into the issue body and flips the title
+  to `Transcript: <url>` (or `Transcribe FAILED: <url>`).
+- Why GitHub-side polling (not AWS posting back): keeps the AWS stack 100%
+  untouched — the whole feature is one workflow + two secrets. Lower risk.
+- This path inherits AWS's cookie auth, so it handles YouTube/IG/FB — unlike
+  the pure-Actions x-video-transcribe skill, whose runner IPs YouTube blocks.
+- Client side (`docs/claude-app-setup.md`): enable the GitHub connector in the
+  Claude app + a Claude Project whose instructions encode the
+  `transcribe:`/`Transcript:` issue convention. The app creates the issue and
+  reads the result; the token never touches the phone.
+- Verified end-to-end: opened a real `transcribe:` issue for "Me at the zoo" →
+  Action ran → issue body came back with the correct transcript, title flipped.
+- Token rotation after a redeploy:
+  `printf %s "$(cat .api-token)" | gh secret set V2T_API_TOKEN --repo amroja-biz/video-to-transcript`.
+
 ---
 
 ## 2026-06-07 - Graduated Out of Scratch

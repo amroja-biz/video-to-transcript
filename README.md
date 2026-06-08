@@ -11,6 +11,9 @@ core:
   Shortcut, results land in S3. The main, always-on path.
 - **Locally on your laptop** — one command, no AWS, transcripts written to a
   folder. See [Run it locally (no AWS)](#run-it-locally-no-aws).
+- **From the Claude iOS app** — paste a URL in a Claude Project; a GitHub issue
+  bridges to the AWS pipeline and the transcript comes back in-app, no Shortcut
+  needed. See [docs/claude-app-setup.md](docs/claude-app-setup.md).
 
 ## How it works
 
