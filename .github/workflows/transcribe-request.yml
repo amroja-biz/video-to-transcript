@@ -1,0 +1,137 @@
+name: transcribe-request
+
+# Bridges the Claude iOS app to the AWS transcription pipeline.
+# The app (via its GitHub connector) opens an issue titled "transcribe: <url>".
+# This workflow reads the URL, hands it to the existing AWS API, waits for the
+# transcript, and writes it back into the issue body — so the app can read it
+# without ever talking to the private AWS endpoint. The AWS stack is untouched;
+# this only *calls* it. Secrets V2T_API_URL and V2T_API_TOKEN hold the endpoint
+# and token (the token never leaves GitHub).
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  transcribe:
+    # Only act on transcription-request issues.
+    if: >-
+      startsWith(github.event.issue.title, 'transcribe:') ||
+      startsWith(github.event.issue.title, 'Transcribe:')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract URL
+        id: url
+        env:
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          # URL = whatever follows "transcribe:" in the title, trimmed.
+          url="$(printf '%s' "$TITLE" | sed -E 's/^[Tt]ranscribe:[[:space:]]*//')"
+          # Fallback: first http(s) token anywhere in the body.
+          if ! printf '%s' "$url" | grep -qE '^https?://'; then
+            url="$(printf '%s' "$BODY" | grep -oE 'https?://[^[:space:]]+' | head -n1 || true)"
+          fi
+          if [ -z "$url" ]; then
+            echo "no_url=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=$url" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Resolved URL: ${url:-<none>}"
+
+      - name: No URL found
+        if: steps.url.outputs.no_url == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUM: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh issue edit "$NUM" --repo "$REPO" --title "Transcribe FAILED: no URL found"
+          gh issue comment "$NUM" --repo "$REPO" \
+            --body "Couldn't find a URL. Put the link in the title after \`transcribe:\` (e.g. \`transcribe: https://youtube.com/watch?v=...\`) or in the body."
+          exit 1
+
+      - name: Submit to AWS and poll for the transcript
+        if: steps.url.outputs.no_url != '1'
+        id: tx
+        env:
+          API_URL: ${{ secrets.V2T_API_URL }}
+          API_TOKEN: ${{ secrets.V2T_API_TOKEN }}
+          URL: ${{ steps.url.outputs.url }}
+        run: |
+          set -euo pipefail
+          # Submit (jq -Rn safely JSON-encodes the URL).
+          payload="$(jq -Rn --arg u "$URL" '{url:$u}')"
+          job="$(curl -fsS -X POST "$API_URL/downloads" \
+            -H "Content-Type: application/json" \
+            -H "x-api-token: $API_TOKEN" \
+            -d "$payload" | jq -r '.id')"
+          echo "Job: $job"
+
+          status=""
+          # Poll ~15 min (90 × 10s) — matches the pipeline's hard deadline.
+          for i in $(seq 1 90); do
+            resp="$(curl -fsS "$API_URL/downloads/$job" -H "x-api-token: $API_TOKEN")"
+            status="$(printf '%s' "$resp" | jq -r '.status // "unknown"')"
+            echo "poll $i: $status"
+            if [ "$status" = "done" ]; then
+              clean_url="$(printf '%s' "$resp" | jq -r '.transcript_clean_url // empty')"
+              if [ -n "$clean_url" ]; then
+                curl -fsS "$clean_url" -o transcript.txt
+              else
+                printf '%s' "$resp" | jq -r '.transcript // ""' > transcript.txt
+              fi
+              break
+            fi
+            if [ "$status" = "error" ]; then
+              printf '%s' "$resp" | jq -r '.error // "unknown error"' > error.txt
+              break
+            fi
+            sleep 10
+          done
+
+          echo "final=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" != "done" ] && [ ! -f error.txt ]; then
+            echo "timed out after ~15 minutes (last status: $status)" > error.txt
+          fi
+
+      - name: Write result back to the issue
+        if: steps.url.outputs.no_url != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUM: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          URL: ${{ steps.url.outputs.url }}
+          FINAL: ${{ steps.tx.outputs.final }}
+        run: |
+          set -euo pipefail
+          MAX=60000   # keep the issue body well under GitHub's 65535 limit
+          if [ "$FINAL" = "done" ] && [ -f transcript.txt ]; then
+            {
+              echo "Transcribed from: $URL"
+              echo
+              if [ "$(wc -c < transcript.txt)" -gt "$MAX" ]; then
+                head -c "$MAX" transcript.txt
+                echo
+                echo
+                echo "_(transcript truncated to fit GitHub's issue size limit)_"
+              else
+                cat transcript.txt
+              fi
+            } > body.md
+            gh issue edit "$NUM" --repo "$REPO" --title "Transcript: $URL" --body-file body.md
+          else
+            err="$(cat error.txt 2>/dev/null || echo 'unknown error')"
+            {
+              echo "Transcription of $URL failed."
+              echo
+              echo "Error: $err"
+            } > body.md
+            gh issue edit "$NUM" --repo "$REPO" --title "Transcribe FAILED: $URL" --body-file body.md
+            exit 1
+          fi
