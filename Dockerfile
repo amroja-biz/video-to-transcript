@@ -48,7 +48,7 @@ snapshot_download('Systran/faster-whisper-base', local_dir='/opt/whisper-models/
     && chmod -R a+rX /opt/whisper-models
 ENV WHISPER_MODEL_PATH=/opt/whisper-models/base
 
-COPY video_to_transcript.py lambda_handler.py entrypoint.sh ./
+COPY video_to_transcript.py transcribe_core.py lambda_handler.py entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
 ENV V2T_IN_CONTAINER=1

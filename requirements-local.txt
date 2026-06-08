@@ -1,0 +1,12 @@
+# Local (laptop-only) transcription: download + faster-whisper, no AWS.
+#   python -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements-local.txt
+# Also needs ffmpeg on PATH, and Deno for YouTube (brew install ffmpeg deno).
+#
+# Shares the download stack with the cloud image but adds faster-whisper (the
+# transcription engine) and omits boto3 (no AWS locally).
+yt-dlp[default]>=2026.3.17
+# PO-token provider client plugin; optional locally, only helps stubborn YouTube.
+bgutil-ytdlp-pot-provider>=1.3.1
+# Transcription engine (in the cloud this is baked into the Docker image).
+faster-whisper>=1.1.0

@@ -166,6 +166,33 @@ a stack, so this was create-new + migrate + delete-old:
 - NOT renamed: nothing — this was the full rename. The old API endpoint and
   job IDs are dead; the iOS Shortcut needs the new endpoint URL.
 
+### Local mode: shared core + second entrypoint (2026-06-08)
+Added a laptop-only path (download + transcribe, no AWS) without forking the
+codebase. The design principle: **same code, two doors — no runtime
+local-vs-cloud detection.** The environment is decided purely by which
+entrypoint is invoked.
+- Extracted the transcription + paragraph-formatting logic out of
+  `lambda_handler.py` into a new AWS-free `transcribe_core.py`
+  (`whisper_segments`, `format_timestamped`, `format_paragraphs`). The Lambda
+  handler now imports them — a pure relocation, so cloud behavior is unchanged.
+- One deliberate behavior tweak in `get_model`: the model id now defaults to
+  `"base"` (faster-whisper auto-downloads) when `WHISPER_MODEL_PATH` is unset.
+  In Lambda that env var is always set (Dockerfile + CFN), so the cloud still
+  uses the baked `/opt/whisper-models/base`; locally it falls back to the
+  download. No cloud change.
+- New `transcribe_local.py`: reuses `AudioDownloader` (already local-capable)
+  for the download, then `transcribe_core` for transcription, writing
+  `<title>.txt` + `<title>-clean.txt` to a folder. **No chunking** — a laptop
+  has no 15-min deadline, so it transcribes whole files.
+- Requirements split: `requirements.txt` left untouched (zero cloud risk);
+  new `requirements-local.txt` adds faster-whisper, omits boto3.
+- Dockerfile gotcha: the `COPY` line had to add `transcribe_core.py` or the
+  handler's new import would fail at cold start. This is the one change that
+  could have broken cloud — covered by redeploy + a live "Me at the zoo" API
+  smoke test before committing.
+- Verified: local CLI on "Me at the zoo" → correct transcript; cloud redeploy
+  + live API run still reaches `done`.
+
 ---
 
 ## 2026-06-07 - Graduated Out of Scratch

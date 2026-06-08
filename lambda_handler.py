@@ -36,15 +36,7 @@ os.environ.setdefault("V2T_CACHE_DIR", "/tmp/yt-dlp-cache")
 import boto3
 
 from video_to_transcript import AudioDownloader, parse_s3_uri, pot_server_reachable
-
-# ---- paragraph formatting tunables ----
-PAUSE_BREAK_S = 1.5        # gap between segments that forces a paragraph break
-MARKER_MIN_PARA_CHARS = 200   # discourse marker only breaks once para is this long
-MAX_PARA_CHARS = 800       # runaway paragraph cap (break at next sentence end)
-TOPIC_MARKERS = (
-    "so ", "so,", "and then", "now ", "now,", "okay", "anyway",
-    "but ", "next ", "alright", "all right",
-)
+from transcribe_core import whisper_segments, format_timestamped, format_paragraphs
 
 CHUNK_SECONDS = 600        # 10-minute chunks for long audio
 POT_SERVER = "http://127.0.0.1:4416"
@@ -56,7 +48,6 @@ AUDIO_S3 = os.environ.get("V2T_S3_OUTPUT", "")
 _table = None
 _s3 = None
 _pot_proc = None
-_whisper_model = None  # cached across warm invokes
 
 
 def _get_table():
@@ -120,78 +111,9 @@ def _ensure_pot_server():
           file=sys.stderr)
 
 
-# ---------- whisper ----------
-
-def _get_model():
-    global _whisper_model
-    if _whisper_model is None:
-        from faster_whisper import WhisperModel
-        _whisper_model = WhisperModel(
-            os.environ.get("WHISPER_MODEL_PATH", "/opt/whisper-models/base"),
-            device="cpu", compute_type="int8",
-        )
-    return _whisper_model
-
-
-def _whisper_segments(path, offset_s=0.0):
-    """Transcribe a file; return [{start, end, text}] with optional time offset."""
-    segments, _info = _get_model().transcribe(str(path), beam_size=5)
-    return [
-        {"start": float(s.start) + offset_s,
-         "end": float(s.end) + offset_s,
-         "text": s.text.strip()}
-        for s in segments
-    ]
-
-
-def _ts(seconds):
-    h, rem = divmod(seconds, 3600)
-    m, s = divmod(rem, 60)
-    return f"{int(h):02d}:{int(m):02d}:{s:05.2f}"
-
-
-def _format_timestamped(segments):
-    return "\n".join(f"[{_ts(s['start'])} -> {_ts(s['end'])}] {s['text']}"
-                     for s in segments) + "\n"
-
-
-def _format_paragraphs(segments):
-    """Insert paragraph breaks at natural boundaries. Words are never altered —
-    only \n\n is inserted between whisper segments. Break signals:
-      (a) long pause (gap >= PAUSE_BREAK_S between segments),
-      (b) topic-shift discourse marker starting a segment, once the current
-          paragraph is long enough to plausibly be a complete thought,
-      (c) runaway paragraph after sentence-final punctuation.
-    """
-    paragraphs, current = [], []
-    cur_len = 0
-    prev_end = None
-    for seg in segments:
-        text = seg["text"]
-        if not text:
-            continue
-        breaks = False
-        if current:
-            gap = seg["start"] - prev_end if prev_end is not None else 0.0
-            lowered = text.lower()
-            prev_text = current[-1]
-            if gap >= PAUSE_BREAK_S:
-                breaks = True
-            elif (cur_len >= MARKER_MIN_PARA_CHARS
-                  and lowered.startswith(TOPIC_MARKERS)):
-                breaks = True
-            elif cur_len > MAX_PARA_CHARS and prev_text.rstrip()[-1:] in ".?!":
-                breaks = True
-        if breaks:
-            paragraphs.append(" ".join(current))
-            current, cur_len = [], 0
-        current.append(text)
-        cur_len += len(text) + 1
-        prev_end = seg["end"]
-    if current:
-        paragraphs.append(" ".join(current))
-    return "\n\n".join(paragraphs) + "\n"
-
+# ---------- transcript upload ----------
+# Transcription + paragraph formatting live in transcribe_core (shared with the
+# local CLI). This module only adds the S3 plumbing around them.
 
 def _upload_transcripts(base_name, segments):
     """Upload timestamped + clean transcripts; return their S3 keys."""
@@ -200,10 +122,10 @@ def _upload_transcripts(base_name, segments):
     ts_key = f"{prefix}/{base_name}.txt"
     clean_key = f"{prefix}/{base_name}-clean.txt"
     _get_s3().put_object(Bucket=bucket, Key=ts_key,
-                   Body=_format_timestamped(segments).encode(),
+                   Body=format_timestamped(segments).encode(),
                    ContentType="text/plain; charset=utf-8")
     _get_s3().put_object(Bucket=bucket, Key=clean_key,
-                   Body=_format_paragraphs(segments).encode(),
+                   Body=format_paragraphs(segments).encode(),
                    ContentType="text/plain; charset=utf-8")
     return ts_key, clean_key
 
@@ -252,7 +174,7 @@ def _step_transcribe(event):
     local = f"/tmp/transcribe/{Path(s3_key).name}"
     _fetch_audio(s3_key, local)
     try:
-        segments = _whisper_segments(local)
+        segments = whisper_segments(local)
         ts_key, clean_key = _upload_transcripts(Path(s3_key).stem, segments)
         _update(job_id, **{"status": "done", "transcript_key": ts_key,
                            "transcript_clean_key": clean_key,
@@ -295,7 +217,7 @@ def _step_transcribe_chunk(event):
     Path(local).parent.mkdir(parents=True, exist_ok=True)
     _get_s3().download_file(bucket, key, local)
     try:
-        segments = _whisper_segments(local, offset_s=float(offset))
+        segments = whisper_segments(local, offset_s=float(offset))
         json_key = key.rsplit(".", 1)[0] + ".json"
         _get_s3().put_object(Bucket=bucket, Key=json_key,
                        Body=json.dumps(segments).encode(),

@@ -1,11 +1,16 @@
 # video-to-transcript
 
-A private HTTPS endpoint that turns a video/audio URL into a **transcript**.
-POST a link from YouTube, Instagram, Facebook, X.com — anything
+Turn a video/audio URL into a **transcript**. Give it a link from YouTube,
+Instagram, Facebook, X.com — anything
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports — and it downloads the
 audio, transcribes it with [faster-whisper](https://github.com/SYSTRAN/faster-whisper),
-and returns paragraph-formatted text. Submit from your laptop with `curl` or
-from your iPhone with a Share-sheet Shortcut.
+and produces paragraph-formatted text. Two ways to run it, same transcription
+core:
+
+- **AWS endpoint** — a private HTTPS API; submit from `curl` or an iPhone
+  Shortcut, results land in S3. The main, always-on path.
+- **Locally on your laptop** — one command, no AWS, transcripts written to a
+  folder. See [Run it locally (no AWS)](#run-it-locally-no-aws).
 
 ## How it works
 
@@ -180,6 +185,46 @@ shared URL and shows you the transcript when it's ready.
 
 Keep the token private — anyone with the endpoint URL and token can submit
 jobs. Store it in 1Password as a backup.
+
+## Run it locally (no AWS)
+
+Prefer to keep everything on your laptop? `transcribe_local.py` does the whole
+job — download + transcribe — in one process, writing transcripts to a folder.
+No AWS, no cookies-in-S3, no job queue. It shares the exact same download and
+transcription code as the cloud path.
+
+**Setup** (one time):
+
+```bash
+brew install ffmpeg deno          # ffmpeg always; deno only for YouTube
+python3.14 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-local.txt
+```
+
+**Use it:**
+
+```bash
+source .venv/bin/activate
+
+# One or more URLs → transcripts/YYYY-MM-DD/<title>.txt (+ -clean.txt)
+python transcribe_local.py "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+
+# Custom output dir, bigger model, drop the MP3 afterward
+python transcribe_local.py -o ~/transcripts --model small --no-keep-audio URL
+```
+
+Each URL produces two files next to the audio: `<title>.txt` (timestamped) and
+`<title>-clean.txt` (paragraph-formatted). Notes:
+
+- Uses your **Chrome cookies automatically** (first run prompts for macOS
+  Keychain access — click "Always Allow"). Override with `--cookies-from-browser
+  firefox` or `--cookies cookies.txt`.
+- The **first run downloads the whisper model** (~150 MB for the default
+  `base`); after that it's cached. `--model` accepts `tiny`/`base`/`small`/
+  `medium`/`large-v3` or a local path — bigger is more accurate but slower.
+- **No chunking** here — unlike the cloud path (which splits long audio to beat
+  Lambda's 15-minute limit), the laptop just transcribes the whole file.
 
 ## Refresh cookies
 
