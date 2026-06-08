@@ -154,8 +154,16 @@ shared URL and shows you the transcript when it's ready.
 
 1. Open the **Shortcuts** app → tap **+** (top-right) to create a new shortcut →
    name it "Transcribe".
-2. Tap the **ⓘ** (info) button → enable **Show in Share Sheet**, and set
-   **Share Sheet Types** to **URLs** only.
+2. Tap the **ⓘ** (info) button → enable **Show in Share Sheet**, then close the
+   panel.
+   - **Restrict it to links (optional but tidy):** after enabling the toggle, a
+     banner appears at the **top of the shortcut** reading **"Receive [Any]
+     input from Share Sheet"**. Tap the highlighted **"Any"** to open the input-
+     types checklist, then deselect everything except **URLs**. (Older iOS shows
+     this as a "Share Sheet Types" row under the toggle instead — same setting.)
+   - This step only keeps the shortcut from appearing in the Share sheet for
+     non-link content. If you can't find it, leave it as **"Any"** — the
+     shortcut still works fine when you share a video link.
 3. Add these actions in order (tap **+ Add Action** for each):
 
    **a. Get Contents of URL** — this submits the job. Configure it:
