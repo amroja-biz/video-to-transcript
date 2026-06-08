@@ -11,7 +11,7 @@ read videos instead of watching them.
 
 **Status:** Active
 **Started:** 2026-06-07
-**Last Updated:** 2026-06-07
+**Last Updated:** 2026-06-08
 
 ---
 
@@ -215,6 +215,41 @@ Action only *calls* the existing API.
   Action ran → issue body came back with the correct transcript, title flipped.
 - Token rotation after a redeploy:
   `printf %s "$(cat .api-token)" | gh secret set V2T_API_TOKEN --repo amroja-biz/video-to-transcript`.
+
+### Claude Code mobile: the third client — and why it needed a guardrail (2026-06-08)
+The GitHub-issue bridge was built for the *consumer Claude app*, but the more
+natural phone client turned out to be **Claude Code mobile**, which already has
+a working GitHub connection (the same one the `x-video-transcribe` skill uses
+from a phone). The consumer-app route was a dead end here: that app has **no
+GitHub connector** to enable — its tool search surfaces nothing, and it tries to
+fall back to a `gh` CLI that doesn't exist on the phone. So the whole Claude
+Project + connector setup in `docs/claude-app-setup.md` doesn't apply to this
+user; Claude Code mobile is the path.
+
+The trap: Claude Code mobile runs in a **cloud sandbox that clones the repo**,
+and the repo *looks like* an installable app (Dockerfile, requirements.txt). So
+on "transcribe this," it did the natural thing — cloned, built a container, and
+tried to `pip install` the app — which can't work (the sandbox can't reach the
+source sites and has no GPU). Crucially, the sandbox does **not** see the
+laptop's `~/.claude/skills/`, so a personal skill couldn't fix it; only files
+**committed in the repo** reach the clone.
+
+Fix (committed, so the clone carries it):
+- A hard guardrail at the top of `CLAUDE.md` (always loaded from the clone):
+  if asked to transcribe, do **not** clone-and-run / build / `pip install` —
+  create a `transcribe: <url>` issue via the `mcp__github__*` tools, poll it,
+  read the transcript back. This is what actually changed the behavior, because
+  CLAUDE.md is in context unconditionally.
+- A project skill `.claude/skills/video-transcribe/SKILL.md` with the full
+  procedure (create issue → poll every ~60–90s up to ~16 min → present verbatim
+  with paragraph breaks). Hardcodes `owner=amroja-biz repo=video-to-transcript`
+  since there's no git remote to discover from in a phone-driven flow, and uses
+  the GitHub MCP tools rather than `gh` (unauthenticated in the sandbox).
+- Lesson: for Claude Code mobile, behavior is steered by what's **committed** —
+  CLAUDE.md first, then in-repo skills. Laptop-only personal skills are invisible
+  to the cloud sandbox.
+- Verified end-to-end from the phone: "transcribe `<url>`" → skipped the install
+  path → created issue #2 → AWS pipeline ran → transcript returned in the issue.
 
 ---
 
