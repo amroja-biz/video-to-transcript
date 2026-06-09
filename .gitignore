@@ -4,3 +4,4 @@ cookies.txt
 __pycache__/
 *.mp3
 .api-token
+transcripts/
