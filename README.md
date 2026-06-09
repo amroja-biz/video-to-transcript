@@ -4,16 +4,16 @@ Turn a video/audio URL into a **transcript**. Give it a link from YouTube,
 Instagram, Facebook, X.com — anything
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports — and it downloads the
 audio, transcribes it with [faster-whisper](https://github.com/SYSTRAN/faster-whisper),
-and produces paragraph-formatted text. Two ways to run it, same transcription
+and produces paragraph-formatted text. A few ways to run it, same transcription
 core:
 
-- **AWS endpoint** — a private HTTPS API; submit from `curl` or an iPhone
-  Shortcut, results land in S3. The main, always-on path.
+- **AWS endpoint** — a private HTTPS API; submit with `curl`, results land in
+  S3. The main, always-on path.
 - **Locally on your laptop** — one command, no AWS, transcripts written to a
   folder. See [Run it locally (no AWS)](#run-it-locally-no-aws).
-- **From the Claude iOS app** — paste a URL in a Claude Project; a GitHub issue
-  bridges to the AWS pipeline and the transcript comes back in-app, no Shortcut
-  needed. See [docs/claude-app-setup.md](docs/claude-app-setup.md).
+- **From your phone** — open this repo in **Claude Code mobile** and say
+  "transcribe `<url>`"; it files a GitHub issue that bridges to the AWS pipeline
+  and reads the transcript back. See [From your phone](#from-your-phone).
 
 ## How it works
 
@@ -139,71 +139,44 @@ curl -s -X POST "$URL/downloads" -H "Content-Type: application/json" \
   -d '{"url": "https://www.instagram.com/reel/DZSmUechRoe/?igsh=MW14MmoycXMwemNhcg=="}'
 ```
 
-## Use it from your iPhone
+## From your phone
 
-Build a Shortcut once, then transcribe any video by tapping **Share → your
-Shortcut** in YouTube, Safari, X, Instagram, etc. The Shortcut submits the
-shared URL and shows you the transcript when it's ready.
+The simplest phone path is **Claude Code mobile** — no Shortcuts, no tokens to
+type:
 
-> **Where's the Shortcuts app?** It's a **built-in Apple app** — you don't need
-> to download anything (if it was deleted, it's free in the App Store under
-> "Shortcuts" by Apple). Its icon is **two overlapping rounded squares on a
-> blue-to-pink gradient**. Don't confuse it with **Settings → Shortcuts**, which
-> is just a configuration page, not the app. Easiest way to open the real app:
-> swipe down on the home screen, search **"Shortcuts"**, and tap the app (the
-> gradient icon). Inside, you'll see a grid of shortcuts and a **+** to add one.
+1. Open this repo (`amroja-biz/video-to-transcript`) in **Claude Code** on your
+   phone.
+2. Say **"transcribe `<video URL>`"**.
 
-**Build the Shortcut:**
+A committed guardrail ([`CLAUDE.md`](CLAUDE.md)) and skill
+([`.claude/skills/video-transcribe/`](.claude/skills/video-transcribe/SKILL.md))
+tell Claude **not** to try to build or run the app in its sandbox (it can't —
+no GPU, and the source sites are blocked) and instead drive the **GitHub-issue
+bridge**: it opens an issue titled `transcribe: <url>`, the
+[`transcribe-request.yml`](.github/workflows/transcribe-request.yml) Action hands
+the URL to the AWS pipeline, and Claude reads the finished transcript back from
+the issue. Takes ~1–6 minutes (longer for long videos); works for YouTube,
+Instagram, Facebook, and X.
 
-1. Open the **Shortcuts** app → tap **+** (top-right) to create a new shortcut →
-   name it "Transcribe".
-2. Tap the **ⓘ** (info) button → enable **Show in Share Sheet**, then close the
-   panel.
-   - **Restrict it to links (optional but tidy):** after enabling the toggle, a
-     banner appears at the **top of the shortcut** reading **"Receive [Any]
-     input from Share Sheet"**. Tap the highlighted **"Any"** to open the input-
-     types checklist, then deselect everything except **URLs**. (Older iOS shows
-     this as a "Share Sheet Types" row under the toggle instead — same setting.)
-   - This step only keeps the shortcut from appearing in the Share sheet for
-     non-link content. If you can't find it, leave it as **"Any"** — the
-     shortcut still works fine when you share a video link.
-3. Add these actions in order (tap **+ Add Action** for each):
+> **One-time setup for the bridge:** the Action needs two repo secrets —
+> `V2T_API_URL` and `V2T_API_TOKEN` (the endpoint + token from `deploy.sh`):
+> ```bash
+> gh secret set V2T_API_URL   --repo amroja-biz/video-to-transcript --body "$URL"
+> printf %s "$(cat .api-token)" | gh secret set V2T_API_TOKEN --repo amroja-biz/video-to-transcript
+> ```
+> Re-set `V2T_API_TOKEN` after any redeploy that rotates the token.
 
-   **a. Get Contents of URL** — this submits the job. Configure it:
-   - URL: `https://<api-id>.execute-api.us-east-1.amazonaws.com/downloads`
-   - Tap **Show More**:
-     - Method: **POST**
-     - Headers: add `x-api-token` = `<your-api-token>`, and
-       `Content-Type` = `application/json`
-     - Request Body: **JSON**, add a field `url` (type Text) and set its
-       value to the **Shortcut Input** variable (tap the field → select the
-       magic variable "Shortcut Input").
+**Consumer Claude app (alternative).** If your Claude app has a **GitHub
+connector** available, the same issue bridge works from a Claude Project — see
+[docs/claude-app-setup.md](docs/claude-app-setup.md). If no GitHub connector is
+offered (it isn't on all accounts), use Claude Code mobile above instead.
 
-   **b. Get Dictionary Value** — pull the job id out of the response.
-   Set Key to `id`, Dictionary to the output of step (a). (Save the result
-   to a variable named `jobId` if you like.)
-
-   **c. Repeat 30 Times** (a loop that polls until the transcript is ready).
-   Inside the loop:
-   - **Get Contents of URL** — URL
-     `https://<api-id>.execute-api.us-east-1.amazonaws.com/downloads/` followed
-     by the `id` variable from step (b). Method **GET**, add the same
-     `x-api-token` header. (No body.)
-   - **Get Dictionary Value** — Key `status` from that response → **If**
-     `status` **is** `done`: add **Get Dictionary Value** Key `transcript`,
-     then **Show Result** (or **Copy to Clipboard**), then **Stop Shortcut**.
-   - **Wait** 10 seconds (so the loop polls roughly every 10s).
-
-4. Done. Now in any app, **Share** a video → **Transcribe**. After a short
-   wait the transcript pops up.
-
-> Tip: if you'd rather keep it dead simple, you can skip the polling loop
-> (steps c) — just submit in step (a), **Show Result** of the job id, and look
-> the transcript up later with `curl` or by re-running a second "check status"
-> Shortcut. The loop above is the hands-free version.
-
-Keep the token private — anyone with the endpoint URL and token can submit
-jobs. Store it in 1Password as a backup.
+**iOS Shortcut (advanced fallback).** You can also hit the API directly from a
+Shortcut: `POST /downloads` with the `x-api-token` header and a JSON `{"url": …}`
+body, then poll `GET /downloads/<id>` until `status` is `done`. It works but is
+fiddly to build and stores the token on the phone — the Claude Code path above is
+much simpler. Keep the token private either way: anyone with the endpoint URL and
+token can submit jobs.
 
 ## Run it locally (no AWS)
 
