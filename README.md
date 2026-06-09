@@ -17,6 +17,8 @@ core:
 
 ## How it works
 
+![video-to-transcript architecture](docs/architecture.png)
+
 Everything runs **serverless on AWS — no servers to manage**:
 
 ```
