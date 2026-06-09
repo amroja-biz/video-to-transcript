@@ -243,6 +243,31 @@ and uploads it to S3 where the pipeline reads it:
 One export covers YouTube, Instagram, Facebook, and X. The S3 object is
 versioned, so a bad export can be rolled back.
 
+## Transcript quality & limitations
+
+Transcription is done with [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+(a reimplementation of OpenAI's Whisper), so the output inherits Whisper's
+known limitations. Treat transcripts as a very good first draft, not a
+verbatim legal record:
+
+- **No speaker labels.** Whisper transcribes *what* was said, not *who* said
+  it. There's no diarization — multi-speaker audio comes back as one continuous
+  stream with no "Speaker 1 / Speaker 2" attribution.
+- **Hallucinations on non-speech and long audio.** During silence, music,
+  applause, or background noise — and occasionally on long recordings — the
+  model can invent text or repeat a phrase that wasn't actually spoken.
+- **Accuracy varies with the audio.** Word error rate rises with strong
+  accents, overlapping or crosstalk speech, noisy/low-bitrate audio, and
+  non-English languages. Proper nouns, names, and domain jargon are frequently
+  misspelled or guessed.
+- **Model-size trade-off.** The cloud pipeline uses the fast, lower-accuracy
+  `base` model. The local CLI can use a larger model (`--model small` /
+  `medium` / `large-v3`) for noticeably better accuracy at the cost of speed.
+- **Approximate timestamps & punctuation.** Timestamps are segment-level (not
+  word-precise) and can drift; punctuation and capitalization are inferred by
+  the model and may be inconsistent. On the chunked cloud path, a word can also
+  clip or repeat at a 10-minute chunk seam.
+
 ## Maintenance & ops
 
 - **Redeploy after code changes:** `./deploy.sh` (rebuilds the image, updates
