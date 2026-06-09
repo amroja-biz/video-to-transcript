@@ -162,9 +162,8 @@ type:
 
 A committed guardrail ([`CLAUDE.md`](CLAUDE.md)) and skill
 ([`.claude/skills/video-transcribe/`](.claude/skills/video-transcribe/SKILL.md))
-tell Claude **not** to try to build or run the app in its sandbox (it can't —
-no GPU, and the source sites are blocked) and instead drive the **GitHub-issue
-bridge**: it opens an issue titled `transcribe: <url>`, the
+tell Claude to drive the **GitHub-issue bridge**: it opens an issue titled
+`transcribe: <url>`, the
 [`transcribe-request.yml`](.github/workflows/transcribe-request.yml) Action hands
 the URL to the AWS pipeline, and Claude reads the finished transcript back from
 the issue. Takes ~1–6 minutes (longer for long videos); works for YouTube,
