@@ -58,8 +58,13 @@ browser and store in S3 — one command, see [Refresh cookies](#refresh-cookies)
 > [Run it locally (no AWS)](#run-it-locally-no-aws) — it needs only Python,
 > `ffmpeg`, and `deno`, no AWS account at all.
 
-Deploying the cloud pipeline and refreshing cookies happen from your Mac. For
-the **AWS path** you need:
+The commands below use macOS [Homebrew](https://brew.sh) (`brew`), but nothing
+here is Mac-only. On **Linux** install the same tools with your distro's package
+manager (`apt`, `dnf`, `pacman`, …); on **Windows** use
+[winget](https://learn.microsoft.com/windows/package-manager/) or
+[Chocolatey](https://chocolatey.org/) (e.g. `winget install ffmpeg` /
+`choco install ffmpeg`), and run the bash scripts under WSL or Git Bash.
+Substitute the `brew install …` lines accordingly. For the **AWS path** you need:
 
 - **An AWS account** with permissions to deploy the stack (CloudFormation, ECR,
   Lambda, API Gateway, Step Functions, DynamoDB, S3, IAM), and the **AWS CLI**
@@ -204,6 +209,10 @@ python3.14 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-local.txt
 ```
+
+On **Linux** use your package manager for `ffmpeg`/`deno` (`apt`, `dnf`,
+`pacman`, …); on **Windows** use `winget install ffmpeg DenoLand.Deno` or
+`choco install ffmpeg deno`. The Python steps are identical on every platform.
 
 **Use it:**
 
