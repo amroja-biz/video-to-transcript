@@ -11,7 +11,7 @@ read videos instead of watching them.
 
 **Status:** Active
 **Started:** 2026-06-07
-**Last Updated:** 2026-06-08
+**Last Updated:** 2026-06-09
 
 ---
 
@@ -250,6 +250,35 @@ Fix (committed, so the clone carries it):
   to the cloud sandbox.
 - Verified end-to-end from the phone: "transcribe `<url>`" → skipped the install
   path → created issue #2 → AWS pipeline ran → transcript returned in the issue.
+
+### Docs pass: README modernized + architecture image (2026-06-09)
+With the Claude Code mobile path proven, the README still read like the old
+Shortcut era. A round of documentation cleanup brought it current:
+- **Phone path rewritten.** Replaced the ~60-line iOS Shortcut build-out with a
+  two-step "From your phone" section (open the repo in Claude Code mobile, say
+  "transcribe `<url>`"). The consumer Claude app stays as an alternative (honest
+  caveat: needs a GitHub connector that isn't on all accounts), and the
+  API-direct Shortcut is kept only as a one-paragraph advanced fallback.
+- **AWS prerequisites spelled out** (account + deploy permissions, AWS CLI
+  `sandbox` profile, us-east-1) with an upfront callout that AWS is optional —
+  the local path needs only Python + ffmpeg + deno.
+- **Not Mac-only.** Added Linux (`apt`/`dnf`/`pacman`) and Windows
+  (`winget` / Chocolatey, scripts under WSL/Git Bash) equivalents next to the
+  Homebrew commands, after confirming nothing in the code is macOS-locked
+  (Docker image is arch-neutral; `--cookies-from-browser` works cross-platform;
+  `transcribe_local.py` is pure Python).
+- **Transcript limitations documented.** New section listing faster-whisper's
+  inherited Whisper limits: no speaker diarization, hallucinations on
+  non-speech/long audio, accuracy variance (accents/noise/language/proper
+  nouns), the base-vs-larger model trade-off, and approximate timestamps/
+  punctuation. (Context for the trade-off, confirmed from the stack: the cloud
+  worker is CPU-only — arm64, 4 GB, 900s — so it bakes the `base` model; a
+  large-v3 on Lambda CPU would blow the per-chunk timeout, the memory budget,
+  and the cost envelope. Larger models stay a local-mode option.)
+- **Architecture diagram** generated with Nano Banana Pro (`docs/architecture.png`)
+  and embedded under "How it works" — clients, the GitHub-issue bridge, the
+  Step Functions pipeline, S3/DynamoDB, and the local-only path. The ASCII flow
+  diagram stays beneath it as a text fallback.
 
 ---
 
