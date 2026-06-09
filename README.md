@@ -52,10 +52,20 @@ browser and store in S3 — one command, see [Refresh cookies](#refresh-cookies)
 
 ## Prerequisites
 
-Deploying and refreshing cookies happen from your Mac. You need:
+> **No AWS? Run it locally instead.** AWS is only needed for the always-on
+> cloud endpoint and the phone/GitHub paths. If you don't have AWS (or just
+> want transcripts on your laptop), skip everything below and jump to
+> [Run it locally (no AWS)](#run-it-locally-no-aws) — it needs only Python,
+> `ffmpeg`, and `deno`, no AWS account at all.
 
-- **Docker** (Apple Silicon builds the arm64 image natively) and the **AWS CLI**
-  configured with the `sandbox` profile.
+Deploying the cloud pipeline and refreshing cookies happen from your Mac. For
+the **AWS path** you need:
+
+- **An AWS account** with permissions to deploy the stack (CloudFormation, ECR,
+  Lambda, API Gateway, Step Functions, DynamoDB, S3, IAM), and the **AWS CLI**
+  installed and configured with the **`sandbox` profile** (`aws configure
+  --profile sandbox`). The stack deploys to **us-east-1**.
+- **Docker** (Apple Silicon builds the arm64/Graviton image natively).
 - A **local Python venv** — used by `refresh-cookies.sh` to export your browser
   cookies:
 
