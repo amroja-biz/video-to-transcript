@@ -158,10 +158,22 @@ curl -s -X POST "$URL/downloads" -H "Content-Type: application/json" \
 
 ## From your phone
 
-The simplest phone path is **Claude Code mobile** — no Shortcuts, no tokens to
-type:
+Running from your phone uses **Claude Code mobile** to drive the GitHub-issue
+bridge — no tokens to type. It depends on three things:
 
-1. Open this repo (`amroja-biz/video-to-transcript`) in **Claude Code** on your
+- **The Claude mobile app** (Claude Code).
+- **A GitHub repo to write transcripts into** — this repo, or any repo that has
+  the `transcribe-request.yml` workflow and the two secrets below. Every request
+  becomes an issue in that repo, and the transcript is written back into the
+  issue.
+- **The Claude for GitHub app installed and configured** to grant Claude access
+  to that repo. Without it, Claude can't open or read the issues, and the bridge
+  won't work. Install it on your GitHub account/org and make sure the
+  transcripts repo is in its allowed-repositories list.
+
+Then:
+
+1. Open the repo (`amroja-biz/video-to-transcript`) in **Claude Code** on your
    phone.
 2. Say **"transcribe `<video URL>`"**.
 
@@ -186,13 +198,6 @@ Instagram, Facebook, and X.
 connector** available, the same issue bridge works from a Claude Project — see
 [docs/claude-app-setup.md](docs/claude-app-setup.md). If no GitHub connector is
 offered (it isn't on all accounts), use Claude Code mobile above instead.
-
-**iOS Shortcut (advanced fallback).** You can also hit the API directly from a
-Shortcut: `POST /downloads` with the `x-api-token` header and a JSON `{"url": …}`
-body, then poll `GET /downloads/<id>` until `status` is `done`. It works but is
-fiddly to build and stores the token on the phone — the Claude Code path above is
-much simpler. Keep the token private either way: anyone with the endpoint URL and
-token can submit jobs.
 
 ## Run it locally (no AWS)
 
