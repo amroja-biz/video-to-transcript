@@ -11,7 +11,7 @@ core:
   S3. The main, always-on path.
 - **Locally on your laptop** — one command, no AWS, transcripts written to a
   folder. See [Run it locally (no AWS)](#run-it-locally-no-aws).
-- **From your phone** — in **Claude Code mobile**, open your fork of this repo
+- **From your phone** — install the transcription skill in **Claude Code mobile**
   and say "transcribe `<url>`"; it files a GitHub issue that bridges to the AWS
   pipeline and reads the transcript back. See [From your phone](#from-your-phone).
 
@@ -158,83 +158,67 @@ curl -s -X POST "$URL/downloads" -H "Content-Type: application/json" \
 
 ## From your phone
 
-This works from **Claude Code mobile** (the coding agent in the Claude app) —
-**not** the regular Claude chat app. The chat app reads "transcribe this URL" as
-a request to transcribe it *itself*, hits YouTube's bot wall, and gives up.
-Claude Code works because the repo carries a `CLAUDE.md` guardrail and a skill
-that tell it to use the GitHub-issue bridge instead of doing it itself.
+This works from **Claude Code mobile**, not the regular Claude chat app (the
+chat app tries to transcribe the video itself and fails). You install a small
+skill into Claude Code; when you say "transcribe `<url>`", it files a
+`transcribe: <url>` issue in a GitHub repo you own, a GitHub Action there runs
+the transcription on AWS and writes the transcript back into the issue, and
+Claude reads it to you.
 
-How it runs: you open your copy of this repo in Claude Code mobile and say
-"transcribe `<url>`". Claude files a `transcribe: <url>` issue **in that repo**,
-a GitHub Action in the repo runs the transcription on AWS, writes the transcript
-back into the issue, and Claude reads it to you.
+You must have **deployed the AWS stack** first (see [Deploy](#deploy)) — you'll
+need the **API endpoint** it printed and the token in the local **`.api-token`**
+file.
 
-Set up once. You must have **deployed the AWS stack** first (see
-[Deploy](#deploy)) — you'll need the **API endpoint** it printed and the token
-in the local **`.api-token`** file.
+### 1. Create a request repo with the workflow
 
-### 1. Make your own copy of this repo
+This is the repo where transcribe requests become issues. Use **any GitHub repo
+you own** — it needs just one file, the
+[`transcribe-request.yml`](.github/workflows/transcribe-request.yml) workflow:
 
-**Fork this repo into your own GitHub account** (the **Fork** button at the top
-of the GitHub page, or `gh repo fork amroja-biz/video-to-transcript --clone=false`).
-Your fork — `<your-account>/video-to-transcript` — becomes your **request repo**:
-transcribe requests file as issues *there*, never into this project's repo. The
-fork already contains the three things Claude Code needs, all repo-agnostic (they
-target whichever repo is checked out): the
-[`transcribe-request.yml`](.github/workflows/transcribe-request.yml) workflow,
-the [`CLAUDE.md`](CLAUDE.md) guardrail, and the
-[`video-transcribe`](.claude/skills/video-transcribe/SKILL.md) skill.
-
-On the fork, GitHub disables Actions by default — open the **Actions** tab and
-click **"I understand my workflows, enable them"**. Also confirm **Issues** are
-on (**Settings → General → Features → Issues**).
-
-> Don't want the full codebase in your repo? Instead create an empty repo and
-> copy just three paths into it from this project: `.github/workflows/transcribe-request.yml`,
-> `CLAUDE.md`, and `.claude/skills/video-transcribe/`. The fork is simpler.
+```bash
+gh repo create <your-account>/<repo> --private
+git clone https://github.com/<your-account>/<repo>.git && cd <repo>
+mkdir -p .github/workflows
+curl -sL https://raw.githubusercontent.com/amroja-biz/video-to-transcript/main/.github/workflows/transcribe-request.yml \
+  -o .github/workflows/transcribe-request.yml
+git add . && git commit -m "Add transcription bridge" && git push
+```
 
 ### 2. Add the two repo secrets
 
-These tell the workflow how to reach your private AWS endpoint. The token never
-leaves GitHub.
+In the repo: **Settings → Secrets and variables → Actions** (⚠️ **Actions**, not
+Agents/Codespaces/Dependabot) → **Secrets** tab → **New repository secret**. Add:
+- `V2T_API_URL` = your API endpoint (e.g. `https://abc123.execute-api.us-east-1.amazonaws.com`)
+- `V2T_API_TOKEN` = the string in your local `.api-token` file
 
-- **In the GitHub web UI:** open your fork → **Settings** → in the left sidebar
-  expand **Secrets and variables** and click **Actions** (⚠️ **Actions**, *not*
-  Agents, Codespaces, or Dependabot — those are separate stores the workflow
-  can't read). On the **Secrets** tab (not Variables), click **New repository
-  secret** and add each one:
-  - Name `V2T_API_URL`, value = your API endpoint (e.g.
-    `https://abc123.execute-api.us-east-1.amazonaws.com`)
-  - Name `V2T_API_TOKEN`, value = the string inside your local `.api-token` file
+Or via CLI (re-run the token line after any redeploy that rotates it):
+```bash
+gh secret set V2T_API_URL --repo <your-account>/<repo> --body "https://<api-id>.execute-api.us-east-1.amazonaws.com"
+printf %s "$(cat .api-token)" | gh secret set V2T_API_TOKEN --repo <your-account>/<repo>
+```
 
-  You should end up with two **Repository secrets** listed under **Actions**.
-- **Or with the `gh` CLI**, run from your `video-to-transcript` checkout (where
-  `.api-token` lives):
-  ```bash
-  URL="https://<api-id>.execute-api.us-east-1.amazonaws.com"   # what deploy.sh printed
-  gh secret set V2T_API_URL --repo <your-account>/video-to-transcript --body "$URL"
-  printf %s "$(cat .api-token)" | gh secret set V2T_API_TOKEN --repo <your-account>/video-to-transcript
-  ```
+### 3. Connect Claude to the repo
 
-Re-set `V2T_API_TOKEN` after any redeploy that rotates the token. (If issue
-writing ever fails, check **Settings → Actions → General → Workflow permissions**
-is set to **Read and write**.)
+In the **Claude app**, connect **GitHub** (**Settings → Connectors / Integrations**)
+and grant the **Claude GitHub app** access to your request repo, so Claude Code
+can create and read its issues.
 
-### 3. Give Claude Code access to your fork
+### 4. Install the transcription skill
 
-In the **Claude app**, connect GitHub (**Settings → Connectors / Integrations**,
-or when Claude Code first asks) and authorize the account that owns your fork.
-This installs Anthropic's **Claude GitHub app**; when GitHub asks which
-repositories to grant, choose **Only select repositories** and include your fork
-so Claude Code can create and read its issues. (Adjust later at GitHub →
-**Settings → Applications → Claude → Configure**.)
+The skill is distributed as a Claude Code plugin (this makes it available on
+mobile, which `~/.claude/skills` does not). In Claude Code:
+
+```
+/plugin marketplace add amroja-biz/video-to-transcript
+/plugin install video-transcribe@video-to-transcript
+```
 
 ### Use it
 
-In **Claude Code mobile**, start a session on your fork and say **"transcribe
-`<video URL>`"**. Claude files the issue, the Action runs the AWS pipeline
-(~1–6 minutes, longer for long videos), and the transcript comes back in the
-issue (Claude reads it to you). Works for YouTube, Instagram, Facebook, and X.
+In **Claude Code mobile**, say **"transcribe `<video URL>` in `<your-account>/<repo>`"**
+(it remembers the repo after the first time). The Action runs the AWS pipeline
+(~1–6 minutes, longer for long videos) and the transcript comes back in the
+issue. Works for YouTube, Instagram, Facebook, and X.
 
 ## Run it locally (no AWS)
 

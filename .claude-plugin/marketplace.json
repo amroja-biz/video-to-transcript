@@ -1,0 +1,11 @@
+{
+  "name": "video-to-transcript",
+  "owner": { "name": "amroja-biz" },
+  "plugins": [
+    {
+      "name": "video-transcribe",
+      "source": "./plugins/video-transcribe",
+      "description": "Transcribe a video URL from Claude Code by filing a GitHub issue that triggers an AWS transcription pipeline."
+    }
+  ]
+}

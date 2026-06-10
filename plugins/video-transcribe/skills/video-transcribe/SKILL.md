@@ -1,13 +1,12 @@
 ---
 name: video-transcribe
-description: Transcribe a video from a URL (YouTube, Instagram, Facebook, X.com, and other yt-dlp-supported sites) and return a clean, readable transcript. Use whenever the user asks to "transcribe", "get the words from", or "give me the transcript of" a video link that is NOT solely an x.com link (for x.com-only, the x-video-transcribe skill also applies). Do the work by creating a GitHub issue in the repository you currently have open — a GitHub Action in that repo (transcribe-request.yml) hands the URL to an AWS pipeline and writes the transcript back into the issue. NEVER download the video or install yt-dlp/whisper/ffmpeg locally, and never try to transcribe it yourself; Claude's sandbox blocks the source sites and has no GPU. Always use the GitHub-issue bridge.
+description: Transcribe a video from a URL (YouTube, Instagram, Facebook, X.com, and other yt-dlp-supported sites) and return a clean, readable transcript. Use whenever the user asks to "transcribe", "get the words from", or "give me the transcript of" a video link that is NOT solely an x.com link (for x.com-only, the x-video-transcribe skill also applies). Do the work by creating a GitHub issue in the user's request repo — a GitHub Action there (transcribe-request.yml) hands the URL to an AWS pipeline and writes the transcript back into the issue. NEVER download the video or install yt-dlp/whisper/ffmpeg locally, and never try to transcribe it yourself; Claude's sandbox blocks the source sites and has no GPU. Always use the GitHub-issue bridge.
 ---
 
 # video-transcribe
 
-This runs in **Claude Code** (e.g. Claude Code mobile), which has this repo
-checked out. You transcribe by creating a **GitHub issue in the current repo**;
-a GitHub Action in the repo does the actual work on AWS and writes the result
+You transcribe by creating a **GitHub issue in the user's request repo**; a
+GitHub Action in that repo does the actual work on AWS and writes the result
 back into the issue, which you then read.
 
 **Do NOT** download the video, `pip install yt-dlp` / whisper / ffmpeg, build a
@@ -18,7 +17,7 @@ correct path is the issue bridge below.
 ## The bridge
 
 ```
-create issue "transcribe: <url>"  ──▶ GitHub (the repo you have open)
+create issue "transcribe: <url>"  ──▶ GitHub (user's request repo)
                                         │ Action: transcribe-request.yml
                                         ▼
                      POST /downloads ──▶ AWS pipeline (yt-dlp + whisper)
@@ -35,16 +34,14 @@ nothing sensitive is needed at request time.
 
 ## Pre-flight: which repo
 
-Create the issue in **the repository currently checked out** — never a hardcoded
-repo, so a fork files into its own repo. Determine it once:
+File the issue in the user's **request repo** (the repo they set up with the
+`transcribe-request.yml` workflow and the `V2T_API_URL` / `V2T_API_TOKEN`
+secrets). Determine `<owner>/<repo>` in this order:
 
-```bash
-git remote get-url origin
-```
-
-Parse the output (e.g. `https://github.com/<owner>/<repo>.git` or
-`git@github.com:<owner>/<repo>.git`) into `<owner>` and `<repo>`, and use those
-in every GitHub call below.
+1. The repo the user named for this request (e.g. "transcribe X in acme/clips").
+2. A request repo they configured earlier this session or in their memory/notes.
+3. Otherwise **ask** the user once: "Which GitHub repo should I file transcribe
+   requests in (`owner/repo`)?" Use that for every GitHub call below.
 
 ## Tools
 
@@ -52,7 +49,7 @@ Use the **GitHub MCP tools** (`mcp__github__*`) — create-issue to submit,
 get/read-issue to poll. (Not the `gh` CLI; it isn't authenticated in the mobile
 sandbox.) If the GitHub tools aren't loaded, find them with ToolSearch
 (query `github issue`). If GitHub truly isn't connected, tell the user to grant
-the Claude GitHub app access to this repo.
+the Claude GitHub app access to their request repo.
 
 ## Procedure
 
@@ -99,7 +96,7 @@ When the user supplies a video URL:
   Wrong path — stop and use the issue bridge. The sandbox blocks the source
   sites and has no GPU.
 - **No GitHub MCP tools.** ToolSearch (`github issue`). If genuinely absent,
-  tell the user to grant the Claude GitHub app access to this repo.
+  tell the user to grant the Claude GitHub app access to their request repo.
 - **`Transcribe FAILED: no URL found`.** The title didn't carry a valid URL.
   Recreate the issue with the link directly after `transcribe:` in the title.
 - **`Transcribe FAILED: <url>` with a yt-dlp error.** Source likely private/
