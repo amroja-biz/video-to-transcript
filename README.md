@@ -11,9 +11,9 @@ core:
   S3. The main, always-on path.
 - **Locally on your laptop** — one command, no AWS, transcripts written to a
   folder. See [Run it locally (no AWS)](#run-it-locally-no-aws).
-- **From your phone** — open this repo in **Claude Code mobile** and say
-  "transcribe `<url>`"; it files a GitHub issue that bridges to the AWS pipeline
-  and reads the transcript back. See [From your phone](#from-your-phone).
+- **From your phone** — ask the **Claude mobile app** to transcribe a URL; it
+  files a GitHub issue that bridges to the AWS pipeline and reads the transcript
+  back. See [From your phone](#from-your-phone).
 
 ## How it works
 
