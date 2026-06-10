@@ -168,28 +168,33 @@ Set up once (you only need this when first installing). You should already have
 **deployed the AWS stack** (see [Deploy](#deploy)) — you'll need the **API
 endpoint** it printed and the token saved in the local **`.api-token`** file.
 
-### 1. Pick the repo that will hold requests, and give it the workflow
+### 1. Create your own request repo and add the workflow
 
-The "request repo" is where each transcription becomes a GitHub issue. It must
-contain the workflow file that does the work.
+Every transcription becomes a GitHub issue in this repo, so it must be **a repo
+you own** — **not this project's repo.** (Your requests and transcripts would
+otherwise land in someone else's project, and you wouldn't have write access
+anyway.) A fresh **private** repo is ideal, and it doesn't need any of this
+code — only the one workflow file:
 
-- **Easiest — reuse this repo.** If you deployed from this repo, it already
-  contains [`.github/workflows/transcribe-request.yml`](.github/workflows/transcribe-request.yml).
-  Nothing to add — go to step 2.
-- **Or use a separate repo** (e.g. you want transcripts to live somewhere else).
-  Create one and copy only the workflow file into it:
-  ```bash
-  # create the repo (or make one at github.com/new)
-  gh repo create <owner>/<repo> --private
+```bash
+# create your own private repo
+gh repo create <your-account>/<repo> --private
 
-  # from your video-to-transcript checkout, copy the workflow into a clone of the new repo
-  git clone https://github.com/<owner>/<repo>.git && cd <repo>
-  mkdir -p .github/workflows
-  cp /path/to/video-to-transcript/.github/workflows/transcribe-request.yml .github/workflows/
-  git add .github/workflows/transcribe-request.yml
-  git commit -m "Add transcription bridge workflow"
-  git push
-  ```
+# copy ONLY the workflow file into it
+git clone https://github.com/<your-account>/<repo>.git && cd <repo>
+mkdir -p .github/workflows
+cp /path/to/video-to-transcript/.github/workflows/transcribe-request.yml .github/workflows/
+git add .github/workflows/transcribe-request.yml
+git commit -m "Add transcription bridge workflow"
+git push
+```
+
+(Prefer clicking? Create the repo at **github.com/new**, then add the file via
+**Add file → Create new file**, path `.github/workflows/transcribe-request.yml`,
+pasting in the contents of
+[this repo's workflow](.github/workflows/transcribe-request.yml). Alternatively
+**fork** this repo into your own account — that brings the workflow with it —
+then enable **Actions** and **Issues** on the fork under its Settings.)
 
 ### 2. Add the two repo secrets
 
