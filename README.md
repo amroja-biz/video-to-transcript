@@ -158,46 +158,37 @@ curl -s -X POST "$URL/downloads" -H "Content-Type: application/json" \
 
 ## From your phone
 
-Running from your phone uses **Claude Code mobile** to drive the GitHub-issue
-bridge — no tokens to type. It depends on three things:
+You don't put this code on your phone. The phone path works through a GitHub
+repo that acts as a request mailbox: from the **Claude mobile app** you ask
+Claude to transcribe a URL, Claude files an issue in that repo, a workflow in
+the repo runs the transcription on AWS and writes the result back into the
+issue, and Claude reads it to you.
 
-- **The Claude mobile app** (Claude Code).
-- **A GitHub repo to write transcripts into** — this repo, or any repo that has
-  the `transcribe-request.yml` workflow and the two secrets below. Every request
-  becomes an issue in that repo, and the transcript is written back into the
-  issue.
-- **The Claude for GitHub app installed and configured** to grant Claude access
-  to that repo. Without it, Claude can't open or read the issues, and the bridge
-  won't work. Install it on your GitHub account/org and make sure the
-  transcripts repo is in its allowed-repositories list.
+Set up once:
 
-Then:
+1. **A request repo.** Any GitHub repo will do — it does **not** need this
+   codebase, only the
+   [`transcribe-request.yml`](.github/workflows/transcribe-request.yml) workflow
+   plus two secrets, `V2T_API_URL` and `V2T_API_TOKEN` (the endpoint and token
+   from `deploy.sh`):
+   ```bash
+   gh secret set V2T_API_URL   --repo <owner>/<repo> --body "$URL"
+   printf %s "$(cat .api-token)" | gh secret set V2T_API_TOKEN --repo <owner>/<repo>
+   ```
+   (Re-set `V2T_API_TOKEN` after any redeploy that rotates the token.)
+2. **Connect Claude to that repo.** Install and configure the **Claude for
+   GitHub app** and add the repo to its allowed list, so Claude can create and
+   read issues there. Without this, the bridge can't work.
+3. **Teach Claude the convention.** The issue title must start with
+   `transcribe:` (that's what triggers the workflow), and Claude reads the
+   result back when the title flips to `Transcript:`. Drop the ready-made
+   instructions from [docs/claude-app-setup.md](docs/claude-app-setup.md) into a
+   Claude Project so every request follows the convention.
 
-1. Open the repo (`amroja-biz/video-to-transcript`) in **Claude Code** on your
-   phone.
-2. Say **"transcribe `<video URL>`"**.
-
-A committed guardrail ([`CLAUDE.md`](CLAUDE.md)) and skill
-([`.claude/skills/video-transcribe/`](.claude/skills/video-transcribe/SKILL.md))
-tell Claude to drive the **GitHub-issue bridge**: it opens an issue titled
-`transcribe: <url>`, the
-[`transcribe-request.yml`](.github/workflows/transcribe-request.yml) Action hands
-the URL to the AWS pipeline, and Claude reads the finished transcript back from
-the issue. Takes ~1–6 minutes (longer for long videos); works for YouTube,
+Then, in that Project on your phone, say **"transcribe `<video URL>`"**. Claude
+files the issue, the workflow runs the AWS pipeline (~1–6 minutes, longer for
+long videos), and the transcript comes back in the issue. Works for YouTube,
 Instagram, Facebook, and X.
-
-> **One-time setup for the bridge:** the Action needs two repo secrets —
-> `V2T_API_URL` and `V2T_API_TOKEN` (the endpoint + token from `deploy.sh`):
-> ```bash
-> gh secret set V2T_API_URL   --repo amroja-biz/video-to-transcript --body "$URL"
-> printf %s "$(cat .api-token)" | gh secret set V2T_API_TOKEN --repo amroja-biz/video-to-transcript
-> ```
-> Re-set `V2T_API_TOKEN` after any redeploy that rotates the token.
-
-**Consumer Claude app (alternative).** If your Claude app has a **GitHub
-connector** available, the same issue bridge works from a Claude Project — see
-[docs/claude-app-setup.md](docs/claude-app-setup.md). If no GitHub connector is
-offered (it isn't on all accounts), use Claude Code mobile above instead.
 
 ## Run it locally (no AWS)
 
