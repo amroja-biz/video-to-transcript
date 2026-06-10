@@ -7,9 +7,11 @@ URL: **do NOT clone-and-run this app, build a container, or `pip install` anythi
 The sandbox can't reach the source sites and has no GPU — it will fail. The
 transcription runs on a deployed AWS pipeline that you trigger via a GitHub issue:
 
-1. Create a GitHub issue in `amroja-biz/video-to-transcript` with
-   **title** `transcribe: <the exact URL>` and **body** `<the exact URL>`
-   (use the `mcp__github__*` tools; `gh` is not authenticated in the sandbox).
+1. Create a GitHub issue **in the repository you currently have open** (find it
+   with `git remote get-url origin` — do NOT hardcode a repo, so forks file into
+   their own repo) with **title** `transcribe: <the exact URL>` and **body**
+   `<the exact URL>` (use the `mcp__github__*` tools; `gh` is not authenticated
+   in the sandbox).
 2. The `transcribe-request.yml` Action picks it up, calls the AWS pipeline, and
    writes the result back into the issue. Poll the issue (every ~60–90s, up to
    ~16 min). When the title flips to `Transcript: <url>`, the transcript is in
