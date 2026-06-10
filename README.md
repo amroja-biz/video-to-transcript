@@ -199,11 +199,16 @@ pasting in the contents of
 These tell the workflow how to reach your private AWS endpoint. The token never
 leaves GitHub.
 
-- **In the GitHub web UI:** open the repo → **Settings** → **Secrets and
-  variables** → **Actions** → **New repository secret**. Add both:
+- **In the GitHub web UI:** open the repo → **Settings** → in the left sidebar
+  expand **Secrets and variables** and click **Actions** (⚠️ **Actions**, *not*
+  Agents, Codespaces, or Dependabot — those are separate stores the workflow
+  can't read). On the **Secrets** tab (not Variables), click **New repository
+  secret** and add each one:
   - Name `V2T_API_URL`, value = your API endpoint (e.g.
     `https://abc123.execute-api.us-east-1.amazonaws.com`)
   - Name `V2T_API_TOKEN`, value = the string inside your local `.api-token` file
+
+  You should end up with two **Repository secrets** listed under **Actions**.
 - **Or with the `gh` CLI**, run from your `video-to-transcript` checkout (where
   `.api-token` lives):
   ```bash
