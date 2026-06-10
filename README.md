@@ -257,6 +257,27 @@ and uploads it to S3 where the pipeline reads it:
 One export covers YouTube, Instagram, Facebook, and X. The S3 object is
 versioned, so a bad export can be rolled back.
 
+> **⚠️ Security — your cookies are live login sessions.** The uploaded file is
+> your browser's cookie jar: it contains the **session cookies that keep you
+> signed in** to Google/YouTube, Instagram, Facebook, and X. Anyone who can read
+> it can load those cookies into their own browser and be **logged in as you on
+> those accounts — no password, no 2FA prompt**.
+>
+> The stack creates the bucket locked down: **all public access blocked**
+> (`BlockPublicAcls` / `BlockPublicPolicy` / `IgnorePublicAcls` /
+> `RestrictPublicBuckets` all true), **server-side encryption** (AES-256) at
+> rest, versioning on, and IAM scoped so the worker Lambda can only read the
+> `cookies/` prefix. So it is **not reachable from the internet**.
+>
+> But that only protects against outsiders. **Anyone with read access to your
+> AWS account or this S3 bucket can download your cookies** — admins, teammates
+> with broad `s3:GetObject`, or anyone who can assume the worker role. **Make
+> sure your AWS account is secure before deploying**, and treat a shared/company
+> account with caution. If you don't fully control who can read the bucket,
+> sign in with a **throwaway/service account** (not your personal logins) before
+> running `refresh-cookies.sh`, or use [local mode](#run-it-locally-no-aws) for
+> anything tied to your personal accounts.
+
 ## Transcript quality & limitations
 
 Transcription is done with [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
