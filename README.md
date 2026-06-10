@@ -183,7 +183,7 @@ gh repo create <your-account>/<repo> --private
 # copy ONLY the workflow file into it
 git clone https://github.com/<your-account>/<repo>.git && cd <repo>
 mkdir -p .github/workflows
-cp /path/to/video-to-transcript/.github/workflows/transcribe-request.yml .github/workflows/
+curl https://raw.githubusercontent.com/amroja-biz/video-to-transcript/refs/heads/main/.github/workflows/transcribe-request.yml > .github/workflows/transcribe-request.yml
 git add .github/workflows/transcribe-request.yml
 git commit -m "Add transcription bridge workflow"
 git push
@@ -192,9 +192,7 @@ git push
 (Prefer clicking? Create the repo at **github.com/new**, then add the file via
 **Add file → Create new file**, path `.github/workflows/transcribe-request.yml`,
 pasting in the contents of
-[this repo's workflow](.github/workflows/transcribe-request.yml). Alternatively
-**fork** this repo into your own account — that brings the workflow with it —
-then enable **Actions** and **Issues** on the fork under its Settings.)
+[this repo's workflow](.github/workflows/transcribe-request.yml). 
 
 ### 2. Add the two repo secrets
 
