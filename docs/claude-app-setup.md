@@ -14,10 +14,11 @@ one-time steps below.
 
 1. In the Claude app: **Settings → Connectors** (a.k.a. Integrations).
 2. Add / enable the **GitHub** connector and sign in to the GitHub account that
-   can access `amroja-biz/video-to-transcript`.
+   can access your request repo (the private repo you created — referred to here
+   as `<your-account>/<your-repo>`).
 3. Make sure it has permission to **create and read issues** (not read-only). If
    GitHub asks which repositories to grant, include
-   `amroja-biz/video-to-transcript`.
+   `<your-account>/<your-repo>`.
 
 > If the connector turns out to be read-only and can't create issues, tell me —
 > there's a fallback (a one-action Shortcut submits; everything else stays the
@@ -26,14 +27,15 @@ one-time steps below.
 ## Step 2 — Create a Claude Project with these instructions
 
 1. In the Claude app, create a new **Project** named e.g. "Video Transcriber".
-2. Paste the following into the Project's **custom instructions**:
+2. Paste the following into the Project's **custom instructions**, **replacing
+   `<your-account>/<your-repo>` (in both places) with your own request repo**:
 
 ```
 You transcribe videos for me through a GitHub-backed pipeline.
-Repository: amroja-biz/video-to-transcript
+Repository: <your-account>/<your-repo>
 
 WHEN I GIVE YOU A VIDEO URL:
-1. Create a GitHub issue in amroja-biz/video-to-transcript with:
+1. Create a GitHub issue in <your-account>/<your-repo> with:
    - Title:  transcribe: <the exact URL>
    - Body:   <the exact URL>
 2. Tell me the issue number and that it's processing (it takes ~1–6 minutes;
@@ -82,4 +84,4 @@ Claude app ◀──read issue body───────────────
 
 The token (`V2T_API_TOKEN`) and endpoint (`V2T_API_URL`) are GitHub Actions
 secrets in the repo. To rotate the token after a redeploy:
-`printf %s "$(cat .api-token)" | gh secret set V2T_API_TOKEN --repo amroja-biz/video-to-transcript`.
+`printf %s "$(cat .api-token)" | gh secret set V2T_API_TOKEN --repo <your-account>/<your-repo>`.
