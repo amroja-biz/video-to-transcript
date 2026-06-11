@@ -205,13 +205,17 @@ can create and read its issues.
 
 ### 4. Install the transcription skill
 
-The skill is distributed as a Claude Code plugin (this makes it available on
-mobile, which `~/.claude/skills` does not). In Claude Code:
+The skill lives in this repo at
+[`skills/video-transcribe/`](skills/video-transcribe/SKILL.md). Copy that folder
+into your Claude Code skills directory:
 
+```bash
+mkdir -p ~/.claude/skills/video-transcribe
+curl -sL https://raw.githubusercontent.com/amroja-biz/video-to-transcript/main/skills/video-transcribe/SKILL.md \
+  -o ~/.claude/skills/video-transcribe/SKILL.md
 ```
-/plugin marketplace add amroja-biz/video-to-transcript
-/plugin install video-transcribe@video-to-transcript
-```
+
+(Or clone this repo and `cp -r skills/video-transcribe ~/.claude/skills/`.)
 
 ### Use it
 

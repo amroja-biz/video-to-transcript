@@ -1,6 +1,0 @@
-{
-  "name": "video-transcribe",
-  "description": "Transcribe a video URL (YouTube, Instagram, Facebook, X) from Claude Code mobile by filing a GitHub issue that triggers an AWS transcription pipeline, then reading the transcript back.",
-  "version": "1.0.0",
-  "author": { "name": "amroja-biz" }
-}
