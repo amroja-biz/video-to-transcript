@@ -34,14 +34,19 @@ nothing sensitive is needed at request time.
 
 ## Pre-flight: which repo
 
-File the issue in the user's **request repo** (the repo they set up with the
+This skill ships inside the **request repo** (the repo with the
 `transcribe-request.yml` workflow and the `V2T_API_URL` / `V2T_API_TOKEN`
-secrets). Determine `<owner>/<repo>` in this order:
+secrets), so file the issue in **the repository currently checked out**.
+Determine it with:
 
-1. The repo the user named for this request (e.g. "transcribe X in acme/clips").
-2. A request repo they configured earlier this session or in their memory/notes.
-3. Otherwise **ask** the user once: "Which GitHub repo should I file transcribe
-   requests in (`owner/repo`)?" Use that for every GitHub call below.
+```bash
+git remote get-url origin
+```
+
+Parse the output (e.g. `https://github.com/<owner>/<repo>.git` or
+`git@github.com:<owner>/<repo>.git`) into `<owner>` and `<repo>` and use those in
+every GitHub call below. (If the user explicitly names a different repo, use
+that instead.)
 
 ## Tools
 

@@ -159,28 +159,34 @@ curl -s -X POST "$URL/downloads" -H "Content-Type: application/json" \
 ## From your phone
 
 This works from **Claude Code mobile**, not the regular Claude chat app (the
-chat app tries to transcribe the video itself and fails). You install a small
-skill into Claude Code; when you say "transcribe `<url>`", it files a
-`transcribe: <url>` issue in a GitHub repo you own, a GitHub Action there runs
-the transcription on AWS and writes the transcript back into the issue, and
-Claude reads it to you.
+chat app tries to transcribe the video itself and fails). You open a GitHub repo
+you own in Claude Code mobile and say "transcribe `<url>`"; a skill in the repo
+files a `transcribe: <url>` issue, a GitHub Action in the repo runs the
+transcription on AWS and writes the transcript back into the issue, and Claude
+reads it to you.
 
 You must have **deployed the AWS stack** first (see [Deploy](#deploy)) — you'll
 need the **API endpoint** it printed and the token in the local **`.api-token`**
 file.
 
-### 1. Create a request repo with the workflow
+### 1. Create a request repo with the workflow and skill
 
-This is the repo where transcribe requests become issues. Use **any GitHub repo
-you own** — it needs just one file, the
-[`transcribe-request.yml`](.github/workflows/transcribe-request.yml) workflow:
+Use **any GitHub repo you own** (don't fork this one). Add two files from this
+project at the same paths — the
+[`transcribe-request.yml`](.github/workflows/transcribe-request.yml) workflow
+(does the transcription) and the
+[`video-transcribe`](.claude/skills/video-transcribe/SKILL.md) skill (tells
+Claude Code to use the bridge). The skill must live under `.claude/skills/` so
+Claude Code loads it automatically when you open the repo:
 
 ```bash
 gh repo create <your-account>/<repo> --private
 git clone https://github.com/<your-account>/<repo>.git && cd <repo>
-mkdir -p .github/workflows
+mkdir -p .github/workflows .claude/skills/video-transcribe
 curl -sL https://raw.githubusercontent.com/amroja-biz/video-to-transcript/main/.github/workflows/transcribe-request.yml \
   -o .github/workflows/transcribe-request.yml
+curl -sL https://raw.githubusercontent.com/amroja-biz/video-to-transcript/main/.claude/skills/video-transcribe/SKILL.md \
+  -o .claude/skills/video-transcribe/SKILL.md
 git add . && git commit -m "Add transcription bridge" && git push
 ```
 
@@ -203,26 +209,12 @@ In the **Claude app**, connect **GitHub** (**Settings → Connectors / Integrati
 and grant the **Claude GitHub app** access to your request repo, so Claude Code
 can create and read its issues.
 
-### 4. Install the transcription skill
-
-The skill lives in this repo at
-[`skills/video-transcribe/`](skills/video-transcribe/SKILL.md). Copy that folder
-into your Claude Code skills directory:
-
-```bash
-mkdir -p ~/.claude/skills/video-transcribe
-curl -sL https://raw.githubusercontent.com/amroja-biz/video-to-transcript/main/skills/video-transcribe/SKILL.md \
-  -o ~/.claude/skills/video-transcribe/SKILL.md
-```
-
-(Or clone this repo and `cp -r skills/video-transcribe ~/.claude/skills/`.)
-
 ### Use it
 
-In **Claude Code mobile**, say **"transcribe `<video URL>` in `<your-account>/<repo>`"**
-(it remembers the repo after the first time). The Action runs the AWS pipeline
-(~1–6 minutes, longer for long videos) and the transcript comes back in the
-issue. Works for YouTube, Instagram, Facebook, and X.
+In **Claude Code mobile**, open your request repo and say **"transcribe
+`<video URL>`"**. The Action runs the AWS pipeline (~1–6 minutes, longer for long
+videos) and the transcript comes back in the issue. Works for YouTube,
+Instagram, Facebook, and X.
 
 ## Run it locally (no AWS)
 

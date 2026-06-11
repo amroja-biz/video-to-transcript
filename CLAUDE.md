@@ -18,9 +18,9 @@ transcription runs on a deployed AWS pipeline that you trigger via a GitHub issu
    the body after the `Transcribed from:` line. `Transcribe FAILED:` = error.
 3. Present the transcript verbatim, paragraph breaks only — no edits, no summary.
 
-Full procedure: `skills/video-transcribe/SKILL.md` (users install it by copying
-that folder into `~/.claude/skills/`). Supports YouTube, Instagram, Facebook,
-X.com, and other yt-dlp sites.
+Full procedure: `.claude/skills/video-transcribe/SKILL.md` (users add this same
+file to their own request repo). Supports YouTube, Instagram, Facebook, X.com,
+and other yt-dlp sites.
 
 ## Development / deployment notes
 
